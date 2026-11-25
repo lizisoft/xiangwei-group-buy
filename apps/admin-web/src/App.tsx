@@ -4891,7 +4891,7 @@ function Finance({
       {view === "finance-ledger" && <section aria-label="财务流水">
         <Typography.Title level={4}>财务流水</Typography.Title>
         <Space wrap style={{ marginBottom: 12 }}>
-          <Input aria-label="关联单据筛选" placeholder="按关联单据筛选" value={ledgerReferenceId} onChange={e => setLedgerReferenceId(e.target.value)} onPressEnter={() => {setLedgerCursors([]);void loadLedgerPage();}} />
+          <Input aria-label="关联单据筛选" placeholder="订单号、订单 ID 或关联单据 ID" value={ledgerReferenceId} onChange={e => setLedgerReferenceId(e.target.value)} onPressEnter={() => {setLedgerCursors([]);void loadLedgerPage();}} />
           <Button onClick={() => {setLedgerCursors([]);void loadLedgerPage();}}>筛选</Button>
           <span>共 {ledgerPage.total} 条</span>
           <Button disabled={!ledgerCursors.length || financePageLoading} onClick={() => {const stack=ledgerCursors.slice(0,-1);setLedgerCursors(stack);void loadLedgerPage(stack.at(-1));}}>上一页</Button>

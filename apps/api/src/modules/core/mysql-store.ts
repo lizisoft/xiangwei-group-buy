@@ -490,7 +490,20 @@ export class MysqlStore extends MemoryStore implements CommerceStore {
       const limit = Math.max(1, Math.min(100, Math.trunc(Number(q.limit) || 25)));
       const filters = ["collection='ledger'"];
       const filterValues: unknown[] = [];
-      if (q.referenceId) { filters.push("lookup_a=?"); filterValues.push(q.referenceId); }
+      if (q.referenceId) {
+        const [orders] = await scope.connection.execute<RowDataPacket[]>(
+          "SELECT entity_key AS id FROM community_entity_records WHERE collection='orders' AND unique_key=? LIMIT 1",
+          [q.referenceId],
+        );
+        const orderId = orders[0]?.id ?? q.referenceId;
+        // Partial refunds are posted once per refund ID, including historical postings.
+        filters.push(`(lookup_a=? OR (lookup_a=? AND lookup_b LIKE 'ORDER:%') OR
+          (lookup_b='FULFILLMENT_EXCEPTION:PARTIAL_REFUND_SUCCEEDED' AND lookup_a IN (
+            SELECT r.entity_key FROM community_entity_records r
+            WHERE r.collection='partialRefunds' AND (r.lookup_a=? OR r.lookup_c=?)
+          )))`);
+        filterValues.push(q.referenceId, orderId, orderId, q.referenceId);
+      }
       const filterPredicate = filters.join(" AND ");
       const where = [...filters];
       const values: unknown[] = [...filterValues];

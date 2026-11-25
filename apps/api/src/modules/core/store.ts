@@ -2098,7 +2098,22 @@ export class MemoryStore implements CommerceStore {
   }
   public async listFinanceLedgerPage(query: FinanceLedgerPageQuery): Promise<FinanceLedgerPage> {
     const limit = Math.max(1, Math.min(100, Math.trunc(query.limit) || 25));
-    const all = [...this.data.ledger.values()].filter((v)=>!query.referenceId || v.referenceId===query.referenceId).sort((a,b)=>Date.parse(b.createdAt)-Date.parse(a.createdAt)||b.id.localeCompare(a.id));
+    let entries = [...this.data.ledger.values()];
+    const reference = query.referenceId;
+    if (reference) {
+      const order = [...this.data.orders.values()].find((value) => value.orderNo === reference);
+      const orderId = order?.id ?? reference;
+      const refundIds = new Set<string>();
+      for (const refund of this.data.partialRefunds.values()) {
+        if (refund.orderId === orderId || refund.exceptionId === reference) refundIds.add(refund.id);
+      }
+      entries = entries.filter((entry) =>
+        entry.referenceId === reference ||
+        (entry.referenceType === "ORDER" && entry.referenceId === orderId) ||
+        (entry.referenceType === "FULFILLMENT_EXCEPTION" && entry.eventType === "PARTIAL_REFUND_SUCCEEDED" && refundIds.has(entry.referenceId)),
+      );
+    }
+    const all = entries.sort((a,b)=>Date.parse(b.createdAt)-Date.parse(a.createdAt)||b.id.localeCompare(a.id));
     const offset = query.cursor ? Number(Buffer.from(query.cursor, "base64url").toString("utf8")) : 0;
     const page=all.slice(offset,offset+limit+1);
     return {items:clone(page.slice(0,limit)), total:all.length, pageSize:limit, nextCursor:page.length>limit?Buffer.from(String(offset+limit)).toString("base64url"):null};

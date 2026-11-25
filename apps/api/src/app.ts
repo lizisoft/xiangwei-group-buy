@@ -195,8 +195,9 @@ export interface AppDependencies {
   store?: CommerceStore;
   scheduler?: CampaignScheduler;
   logger?: FastifyServerOptions["logger"];
-  /** Deterministic adapter injection is test-only; production uses Amap only. */
+  /** Local runners supply simulated locations through the same validation path. */
   reverseLocationAdapter?: ReverseLocationAdapter;
+  geoSearch?: ReturnType<typeof createGeoSearch>;
   wechatCodeExchange?: WechatCodeExchange;
   wechatPhoneExchange?: WechatPhoneExchange;
   subscriptionMessageProvider?: SubscriptionMessageProvider;
@@ -929,7 +930,9 @@ export async function buildApp(
       },
     );
 
-  const geoSearch = createGeoSearch();
+  const geoSearch = config.NODE_ENV === "development" && dependencies.geoSearch
+    ? dependencies.geoSearch
+    : createGeoSearch();
   const reverseLocationAdapter =
     dependencies.reverseLocationAdapter ??
     (config.NODE_ENV === "test"

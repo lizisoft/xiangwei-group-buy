@@ -7,6 +7,7 @@ import { api, type GeoPlace } from "./api.ts";
 import { pickupSearchQuery, resolvePickupAddress } from "./pickup-address.ts";
 
 const defaultCenter: [number, number] = [35.6, 104.1];
+const localPreview = import.meta.env.DEV && import.meta.env.VITE_LOCAL_PREVIEW === "true";
 const round6 = (value: number) => Number(value.toFixed(6));
 export const isLocationServiceUnconfigured = (error: unknown) =>
   Boolean(error && typeof error === "object" &&
@@ -144,7 +145,7 @@ export function PickupLocationPicker({
   };
 
   useEffect(() => {
-    if (!active || disabled || !mapNode.current || mapRef.current) return;
+    if (localPreview || !active || disabled || !mapNode.current || mapRef.current) return;
     let cancelled = false;
     void import("leaflet").then((mod) => {
       if (cancelled || !mapNode.current || mapRef.current) return;
@@ -286,6 +287,12 @@ export function PickupLocationPicker({
   };
 
   const located = latitude != null && longitude != null;
+  const locationHint = localPreview
+    ? "请选择北京市东城区，搜索“本地演练”并选中结果"
+    : located ? "图钉位置待核验，请确认后保存" : "选择候选或地图位置后，系统将核验行政路径";
+  const confirmedHint = localPreview
+    ? "所选位置已完成本次核验"
+    : "所选位置已完成本次核验；可拖动图钉重新调整";
 
   return (
     <div className="pickup-location">
@@ -336,29 +343,29 @@ export function PickupLocationPicker({
           placeholder={disabled ? "请先选择服务区域" : "如：朝阳北路101号大悦城B1层"}
         />
       </AutoComplete>
-      <div className="pickup-map-wrap">
-        <div
-          ref={mapNode}
-          className="pickup-map"
-          role="application"
-          aria-label="自提点地图，点击或拖动图钉选择实际位置"
-        />
-        <p className="pickup-map-hint">
-          {located
-            ? "拖动图钉微调位置，调整后会重新核验"
-            : "输入地址后请选择搜索候选，或在地图上点选"}
-        </p>
-      </div>
+      {!localPreview && (
+        <div className="pickup-map-wrap">
+          <div
+            ref={mapNode}
+            className="pickup-map"
+            role="application"
+            aria-label="自提点地图，点击或拖动图钉选择实际位置"
+          />
+          <p className="pickup-map-hint">
+            {located
+              ? "拖动图钉微调位置，调整后会重新核验"
+              : "输入地址后请选择搜索候选，或在地图上点选"}
+          </p>
+        </div>
+      )}
       <Typography.Text type="secondary">
         {searching
           ? "正在搜索地点，请从候选中选择实际位置…"
           : verificationState === "VERIFYING"
             ? "正在核验所选位置，请稍候…"
             : verificationState === "CONFIRMED"
-              ? "所选位置已完成本次核验；可拖动图钉重新调整"
-              : located
-                ? "图钉位置待核验，请确认后保存"
-                : "选择候选或地图位置后，系统将核验行政路径"}
+              ? confirmedHint
+              : locationHint}
       </Typography.Text>
       <div aria-live="polite">
         {configurationError ? (
@@ -400,20 +407,22 @@ export function PickupLocationPicker({
                 重试核验
               </Button>
             )}
-            <Button
-              type="link"
-              size="small"
-              onClick={() => {
-                setMapError(null);
-                mapRef.current?.remove();
-                mapRef.current = null;
-                markerRef.current = null;
-                reportVerificationState("UNCONFIRMED");
-                setMapRetry((value) => value + 1);
-              }}
-            >
-              重试地图
-            </Button>
+            {!localPreview && (
+              <Button
+                type="link"
+                size="small"
+                onClick={() => {
+                  setMapError(null);
+                  mapRef.current?.remove();
+                  mapRef.current = null;
+                  markerRef.current = null;
+                  reportVerificationState("UNCONFIRMED");
+                  setMapRetry((value) => value + 1);
+                }}
+              >
+                重试地图
+              </Button>
+            )}
           </Typography.Paragraph>
           )}
           {located && verificationState !== "VERIFYING" && (

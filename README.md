@@ -37,16 +37,18 @@ pnpm install
 pnpm dev
 ```
 
-`pnpm dev` 会同时启动使用内存数据的 API（3100）和运营后台（5173），适合不依赖 Docker 的基础预览；停止命令后两个进程会一起退出。也可以继续分别启动：
+`pnpm dev` 会先构建共享包，再启动只监听本机的 API（3100）和运营后台（5173）。本地预览使用内存数据、开发体验登录和模拟支付，停止命令后两个进程会一起退出。
+
+打开 `http://127.0.0.1:5173`，新增北京市东城区的服务区域。在新增自提点页面选择该区域、上传测试照片并搜索「本地演练」，选中结果后即可核验并保存。启用区域下单后，可以用这个自提点演练开团。演练地点仅供本机预览使用。
+
+也可以分别启动。两条命令都会自动构建所需的共享包。`pnpm dev:api` 会读取项目根目录的 `.env`，使用实际配置的位置服务。若要搜索、创建或变更实际地点，需要配置 `AMAP_WEB_KEY`。
 
 ```bash
 pnpm dev:api
 pnpm dev:admin
 ```
 
-运营后台：`http://127.0.0.1:5173`
-
-小程序：在微信开发者工具中导入 `apps/miniprogram`（本机为 `/Users/lizi/Desktop/拼团项目/apps/miniprogram`），不要导入仓库根目录或 `src`。日常预览使用已收拢最新修复的 `main`；切换仓库分支会同时替换开发者工具正在读取的源码。开发者工具的 `develop` 环境默认访问新 HTTPS API `https://liziqi.icu`，使用真实微信登录，无需先启动本地 API 即可预览首页。
+在微信开发者工具中导入项目下的 `apps/miniprogram`。切换仓库分支会同时替换开发者工具正在读取的源码。开发者工具的 `develop` 环境默认访问 `https://liziqi.icu` 并使用真实微信登录。
 
 如需本地联调，可将 `apps/miniprogram/src/config/deployment.local.example.ts` 复制为被 gitignore 的 `apps/miniprogram/src/config/deployment.local.ts`，并显式设置 `development = { mode: 'local' }`（示例默认 `remote`；已有本地配置时仅修改该字段，保留已有模板），再在项目根目录运行 `pnpm dev`。该切换只对 `develop/local` 的开发体验登录生效；`trial/release` 仍必须使用备案 HTTPS 域名、真实微信登录和已审核模板配置，不能填 HTTP 地址或固定凭据。
 

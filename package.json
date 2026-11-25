@@ -8,8 +8,8 @@
   },
   "scripts": {
     "dev": "node scripts/dev.mjs",
-    "dev:api": "pnpm --filter @hometown/api dev",
-    "dev:admin": "pnpm --filter @hometown/admin-web dev",
+    "dev:api": "node scripts/dev.mjs api",
+    "dev:admin": "node scripts/dev.mjs admin",
     "infra:up": "docker compose -f infra/compose.yaml up -d",
     "infra:down": "docker compose -f infra/compose.yaml down",
     "db:migrate": "pnpm --filter @hometown/api db:migrate",

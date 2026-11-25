@@ -128,7 +128,8 @@ jobs:
   browser:
     needs: scope
     if: needs.scope.outputs.browser == 'true'
-    runs-on: ubuntu-latest
+    # Playwright 1.51 has browser dependencies for Ubuntu 24.04.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

@@ -4,6 +4,9 @@ type CartPage = {
   data: Record<string, unknown>;
   setData: (patch: Record<string, unknown>) => void;
   refresh: () => void;
+  onShow: () => Promise<void>;
+  checkout: () => void;
+  toggleGroup: (event: WechatMiniprogram.BaseEvent) => void;
   openPickup: () => void;
   showPickupAddress: (event: WechatMiniprogram.BaseEvent) => void;
 };
@@ -53,5 +56,52 @@ describe('empty cart pickup context', () => {
       content: '河北省北区第三中学东门 2 号楼',
       showCancel: false,
     }));
+  });
+
+  it("keeps both saved groups and only checks out the area that still accepts orders", async () => {
+    const { api } = await import("../../utils/api");
+    const { addCartLine, readMultiCheckoutDraft } = await import("../../utils/cart");
+    const areaA = { id: "area-a", name: "A 区", regionCode: "110101", orderEnabled: true } as ServiceAreaDto;
+    const areaB = { ...areaA, id: "area-b", name: "B 区", regionCode: "110102" };
+    const areas = vi.spyOn(api, "listServiceAreas").mockResolvedValue([{ ...areaA, orderEnabled: false }, areaB]);
+    storage.set("selectedServiceArea", areaA);
+    for (const area of [areaA, areaB]) {
+      addCartLine({
+        campaignId: area.id, campaignTitle: area.name, serviceAreaId: area.id, serviceAreaName: area.name,
+        pickupPointId: "point-" + area.id, pickupPointName: area.name, pickupPointAddress: "自提地址",
+      }, {
+        skuId: "sku", title: "苹果", skuName: "一份", imageUrl: null, unitPriceCents: 1500, quantity: 1, maxQuantity: 5,
+      });
+    }
+    const savedCart = storage.get("standardCart");
+    let page!: CartPage;
+    vi.stubGlobal("Page", (definition: CartPage) => { page = definition; return definition; });
+    await import("./index");
+    page.setData = (patch) => Object.assign(page.data, patch);
+
+    await page.onShow();
+    expect(page.data).toMatchObject({
+      groups: [
+        { serviceAreaId: "area-a", unavailable: true, selected: false },
+        { serviceAreaId: "area-b", unavailable: false, selected: true },
+      ],
+      selectedGroupCount: 1, selectedTotal: "15.00", allSelected: true,
+    });
+    page.toggleGroup({ currentTarget: { dataset: { key: "area-a::point-area-a" } } } as unknown as WechatMiniprogram.BaseEvent);
+    page.checkout();
+    expect(wx.navigateTo).toHaveBeenCalledWith({ url: "/pages/checkout/index?source=multi" });
+    expect(readMultiCheckoutDraft()?.groups.map((group) => group.serviceAreaId)).toEqual(["area-b"]);
+    expect(storage.get("standardCart")).toEqual(savedCart);
+    expect(storage.has("selectedServiceArea")).toBe(false);
+
+    areas.mockResolvedValue([areaA, areaB]);
+    await page.onShow();
+    expect(page.data).toMatchObject({
+      selectedGroupCount: 2, selectedTotal: "30.00",
+      groups: [
+        { serviceAreaId: "area-a", unavailable: false, selected: true },
+        { serviceAreaId: "area-b", unavailable: false, selected: true },
+      ],
+    });
   });
 });

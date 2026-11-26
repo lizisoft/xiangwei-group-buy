@@ -10,10 +10,16 @@
   </view>
   <block wx:else>
     <view class="cart-toolbar"><view class="group-select" data-key="all" bindtap="toggleAll"><text class="checkmark {{allSelected ? 'checked' : ''}}">{{allSelected ? '✓' : ''}}</text><text>全选</text></view><text class="cart-clear" bindtap="clearAll">清空</text></view>
+    <view wx:if="{{areaCheckFailed}}" class="cart-area-warning"><text>暂时无法核对区域状态，结算时会再次检查。</text><text class="cart-area-retry" bindtap="checkAreaAvailability">重试</text></view>
     <view wx:for="{{groups}}" wx:key="groupKey" class="multi-cart-group">
       <view class="group-heading" data-key="{{item.groupKey}}" bindtap="toggleGroup">
-        <text class="checkmark {{item.selected ? 'checked' : ''}}">{{item.selected ? '✓' : ''}}</text>
-        <view class="group-heading__copy"><text class="group-title">{{item.campaignTitle}}</text><text class="group-subtitle" data-key="{{item.groupKey}}" catchtap="showPickupAddress">{{item.pickupPointName}}<text wx:if="{{item.pickupPointDisplayAddress}}"> · {{item.pickupPointDisplayAddress}}</text></text><text class="group-arrival">预计领取：{{item.arrivalLabel}}</text><text class="group-cutoff">截单：{{item.cutoffText}}</text></view>
+        <text wx:if="{{!item.unavailable}}" class="checkmark {{item.selected ? 'checked' : ''}}">{{item.selected ? '✓' : ''}}</text>
+        <view class="group-heading__copy">
+          <text class="group-title">{{item.campaignTitle}}</text>
+          <text class="group-subtitle" data-key="{{item.groupKey}}" catchtap="showPickupAddress">{{item.pickupPointName}}<text wx:if="{{item.pickupPointDisplayAddress}}"> · {{item.pickupPointDisplayAddress}}</text></text>
+          <text wx:if="{{item.unavailable}}" class="group-unavailable">所在区域已停止下单</text>
+          <block wx:else><text class="group-arrival">预计领取：{{item.arrivalLabel}}</text><text class="group-cutoff">截单：{{item.cutoffText}}</text></block>
+        </view>
         <text class="group-count">{{item.itemCount}}件</text>
       </view>
       <view wx:for="{{item.items}}" wx:for-item="line" wx:key="skuId" class="ui-view cart-line">
@@ -24,6 +30,6 @@
       <view class="group-total"><text>{{item.itemCount}} 件商品</text><text>小计 <text class="money">{{item.totalText}}</text></text></view>
     </view>
     <view class="multi-cart-note">每个团期和自提点各生成一张订单；付款前会再次核对价格、库存、截单时间和领取地点。</view>
-    <view class="ui-view cart-bar"><view class="cart-bar__summary"><text class="selected-groups">已选 {{selectedGroupCount}} 组 · {{selectedCount}} 件</text><text class="money">{{selectedTotal}}</text></view><button class="ui-button primary-button {{!selectedGroupCount ? 'ui-disabled' : ''}}" disabled="{{!selectedGroupCount}}" bindtap="checkout">去结算</button></view>
+    <view class="ui-view cart-bar"><view class="cart-bar__summary"><text class="selected-groups">已选 {{selectedGroupCount}} 组 · {{selectedCount}} 件</text><text class="money">{{selectedTotal}}</text></view><button class="ui-button primary-button {{!selectedGroupCount || checkingAreas ? 'ui-disabled' : ''}}" disabled="{{!selectedGroupCount || checkingAreas}}" bindtap="checkout">{{checkingAreas ? '正在核对区域' : '去结算'}}</button></view>
   </block>
 </view>

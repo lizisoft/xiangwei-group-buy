@@ -113,6 +113,11 @@ export function orderStatusCopy(status: string): { text: string; hint: string } 
   return ORDER_STATUS[status] ?? { text: "订单状态已更新", hint: "请刷新查看最新履约进度" };
 }
 
+export function isAfterSaleOrder(order: Pick<OrderDto, "status" | "communityQualityCases" | "partialRefunds">): boolean {
+  return ["REFUNDING", "REFUNDED", "CANCELLED"].includes(order.status)
+    || Boolean(order.communityQualityCases?.length || order.partialRefunds?.length);
+}
+
 export function pickupWindowStatusText(status: string): string {
   return PICKUP_WINDOW_STATUS[status] ?? "领取安排已更新，请查看截止时间";
 }

@@ -4574,6 +4574,10 @@ function Service({
   );
 }
 
+function refundReferenceFromUrl(): string {
+  return new URLSearchParams(window.location.search).get("refundReference")?.trim() ?? "";
+}
+
 function Finance({
   view,
   refunds,
@@ -4613,15 +4617,18 @@ function Finance({
   error: string | null;
 }) {
   const { message } = AntApp.useApp();
-  const canExecuteRefund = useCan()("finance.refund");
+  const can = useCan();
+  const canExecuteRefund = can("finance.refund");
+  const initialRefundReference = view === "finance-records" ? refundReferenceFromUrl() : "";
   const [refundPage, setRefundPage] = useState(refunds);
   const [ledgerPage, setLedgerPage] = useState(ledger);
-  const [refundOrderId, setRefundOrderId] = useState("");
+  const [refundOrderId, setRefundOrderId] = useState(initialRefundReference);
   const [refundStatus, setRefundStatus] = useState("");
   const [ledgerReferenceId, setLedgerReferenceId] = useState("");
   const [refundCursors, setRefundCursors] = useState<string[]>([]);
   const [ledgerCursors, setLedgerCursors] = useState<string[]>([]);
   const [financePageLoading, setFinancePageLoading] = useState(false);
+  useEffect(() => { setRefundOrderId(initialRefundReference); setRefundStatus(""); }, [initialRefundReference]);
   useEffect(() => { setRefundPage(refunds); setRefundCursors([]); }, [refunds]);
   useEffect(() => { setLedgerPage(ledger); setLedgerCursors([]); }, [ledger]);
   const loadRefundHistory = async (cursor?: string) => {
@@ -4904,11 +4911,25 @@ function Finance({
           dataSource={ledgerPage.items}
           columns={[
           { title: "事件", render: (_, value) => displayLabel(value.eventType) },
-          { title: "关联单据", dataIndex: "referenceId" },
+          { title: "关联单据", render: (_, value) => (
+            <Space direction="vertical" size={0}>
+              {value.orderNo && (
+                <span>订单 {value.orderId && can("orders.view") ? (
+                  <a href={`?${new URLSearchParams({ page: "orders", orderId: value.orderId })}`} target="_blank" rel="noopener noreferrer">{value.orderNo}</a>
+                ) : value.orderNo}</span>
+              )}
+              {value.refundNo && (
+                <span>退款单 {can("finance-records.view") ? (
+                  <a href={`?${new URLSearchParams({ page: "finance-records", refundReference: value.refundNo })}`} target="_blank" rel="noopener noreferrer">{value.refundNo}</a>
+                ) : value.refundNo}</span>
+              )}
+              {!value.orderNo && !value.refundNo && <span>{value.referenceId}</span>}
+            </Space>
+          ) },
           {
             title: "借/贷明细",
             render: (_, value) =>
-              value.lines.map((line) => `${line.direction === "DEBIT" ? "借" : "贷"} ${line.accountCode} ${money(line.amountCents)}`).join("；"),
+              value.lines.map((line) => `${line.direction === "DEBIT" ? "借" : "贷"} ${displayLabel(line.accountCode)} ${money(line.amountCents)}`).join("；"),
           },
           { title: "借方合计", render: (_, value) => money(value.debitCents) },
           { title: "贷方合计", render: (_, value) => money(value.creditCents) },
@@ -5453,6 +5474,7 @@ export function App() {
     const url = new URL(window.location.href);
     url.searchParams.set("page", nextPage);
     url.searchParams.delete("orderId");
+    url.searchParams.delete("refundReference");
     url.searchParams.delete("billId");
     window.history.pushState({ adminPage: nextPage }, "", `${url.pathname}${url.search}${url.hash}`);
   }, []);
@@ -5522,6 +5544,10 @@ export function App() {
     }
     if (currentView !== "orders" && url.searchParams.has("orderId")) {
       url.searchParams.delete("orderId");
+      changed = true;
+    }
+    if (currentView !== "finance-records" && url.searchParams.has("refundReference")) {
+      url.searchParams.delete("refundReference");
       changed = true;
     }
     if (url.searchParams.has("billId")) {
@@ -5650,8 +5676,12 @@ export function App() {
         if (currentPage === "governance") setNotifications(value => [...value]);
       }
       if (currentPage === "finance") {
-        if (currentView !== "finance-ledger") work.push(api.finance().then(commit(setRefunds)));
-        if (currentView === "finance-ledger") work.push(api.ledger().then(commit(setLedger)));
+        if (currentView === "finance-ledger") {
+          work.push(api.ledger().then(commit(setLedger)));
+        } else {
+          const reference = currentView === "finance-records" ? refundReferenceFromUrl() : "";
+          work.push(api.finance(reference ? { reference } : undefined).then(commit(setRefunds)));
+        }
       }
       if (currentPage === "audit") {
         work.push(api.audits().then(commit(setAudits)));

@@ -6,11 +6,11 @@ import mysql, {
   type PoolConnection,
   type RowDataPacket,
 } from "mysql2/promise";
-import { MemoryStore, STORE_READ_METHODS as READ_METHODS, type CommerceStore, type StoreOrderSearchPage, type StoreOrderSearchQuery, type FinanceRefundPageQuery, type FinanceLedgerPageQuery, type ServiceAreaInterestPageQuery } from "./store.js";
+import { MemoryStore, STORE_READ_METHODS as READ_METHODS, type CommerceStore, type StoreOrderSearchPage, type StoreOrderSearchQuery, type FinanceRefundPageQuery, type FinanceLedgerPageQuery, type FinanceLedgerEntry, type ServiceAreaInterestPageQuery } from "./store.js";
 import { decodeEntityDocument, toEntityRecord, type EntityCollection, type EntityRow } from "./entity-store-records.js";
 import { entityNeeds, type EntityNeed } from "./entity-store-plan.js";
 import { BusinessError, type OrderStatus } from "@hometown/domain";
-import type { CommunityPickupReceipt, Order, User } from "./types.js";
+import type { CommunityPickupReceipt, LedgerTransaction, Order, User } from "./types.js";
 
 type StateRow = RowDataPacket & { payload: string | Record<string, unknown> };
 type StoreMethod = (...args: unknown[]) => unknown;
@@ -528,11 +528,31 @@ export class MysqlStore extends MemoryStore implements CommerceStore {
       }
       const predicate = where.join(" AND ");
       const [counts] = await scope.connection.execute<RowDataPacket[]>(`SELECT COUNT(*) AS total FROM community_entity_records WHERE ${filterPredicate}`, filterValues);
-      const [rows] = await scope.connection.execute<Array<EntityRow & { createdAtKey: string }>>(`SELECT collection,entity_key AS entityKey,DATE_FORMAT(created_at,'%Y-%m-%d %H:%i:%s.%f') AS createdAtKey,document FROM community_entity_records WHERE ${predicate} ORDER BY created_at DESC,entity_key DESC LIMIT ${limit + 1}`, values);
+      const [rows] = await scope.connection.execute<Array<EntityRow & Pick<FinanceLedgerEntry, "orderId" | "orderNo" | "refundNo"> & { createdAtKey: string }>>(
+        `SELECT l.collection,l.entityKey,l.createdAtKey,l.document,
+           o.entity_key AS orderId,o.lookup_d AS orderNo,COALESCE(p.lookup_b,r.lookup_b) AS refundNo
+         FROM (
+           SELECT collection,entity_key AS entityKey,DATE_FORMAT(created_at,'%Y-%m-%d %H:%i:%s.%f') AS createdAtKey,
+             document,lookup_a,lookup_b
+           FROM community_entity_records WHERE ${predicate}
+           ORDER BY created_at DESC,entity_key DESC LIMIT ${limit + 1}
+         ) AS l
+         LEFT JOIN community_entity_records p ON p.collection='partialRefunds' AND p.entity_key=l.lookup_a
+           AND l.lookup_b='FULFILLMENT_EXCEPTION:PARTIAL_REFUND_SUCCEEDED'
+         LEFT JOIN community_entity_records o ON o.collection='orders'
+           AND o.entity_key=CASE WHEN l.lookup_b LIKE 'ORDER:%' THEN l.lookup_a ELSE p.lookup_a END
+         LEFT JOIN community_entity_records r ON r.collection='orderRefunds' AND r.unique_key=l.lookup_a
+           AND l.lookup_b='ORDER:REFUND_SUCCEEDED'
+         ORDER BY l.createdAtKey DESC,l.entityKey DESC`,
+        values,
+      );
       const visible = rows.slice(0, limit);
       const last = visible.at(-1);
       return { handled: true, value: {
-        items: visible.map(row => decodeEntityDocument("ledger", row.document)),
+        items: visible.map((row): FinanceLedgerEntry => ({
+          ...decodeEntityDocument("ledger", row.document) as LedgerTransaction,
+          orderId: row.orderId, orderNo: row.orderNo, refundNo: row.refundNo,
+        })),
         total: Number(counts[0]?.total ?? 0), pageSize: limit,
         nextCursor: rows.length > limit && last ? Buffer.from(JSON.stringify([last.createdAtKey, last.entityKey])).toString("base64url") : null,
       } };
@@ -685,8 +705,11 @@ export class MysqlStore extends MemoryStore implements CommerceStore {
       if (query.status) { where.push("o.record_status=?"); values.push(query.status); }
       if (query.statuses) {
         const statusClause = query.statuses.length ? `o.record_status IN (${query.statuses.map(() => "?").join(",")})` : "1=0";
-        if (query.includeCommunityQualityCases) {
-          where.push(`(${statusClause} OR EXISTS (SELECT 1 FROM community_entity_records q WHERE q.collection='quality' AND q.lookup_a=o.entity_key))`);
+        if (query.includeAfterSale) {
+          where.push(`(${statusClause} OR EXISTS (
+            SELECT 1 FROM community_entity_records a
+            WHERE a.collection IN ('quality','partialRefunds') AND a.lookup_a=o.entity_key
+          ))`);
         } else {
           where.push(statusClause);
         }
@@ -717,7 +740,7 @@ export class MysqlStore extends MemoryStore implements CommerceStore {
       const predicate = where.join(" AND ");
       // Status-only filters (including none) must count from the narrow
       // status index, never the clustered rows that carry order documents.
-      const statusOnly = !query.includeCommunityQualityCases && !query.userId && !query.campaignId && !query.pickupPointId && !query.serviceAreaId && !query.orderNo && !query.from && !query.to && !query.catalogSkuId && !keyword;
+      const statusOnly = !query.includeAfterSale && !query.userId && !query.campaignId && !query.pickupPointId && !query.serviceAreaId && !query.orderNo && !query.from && !query.to && !query.catalogSkuId && !keyword;
       const [counts] = await scope.connection.execute<RowDataPacket[]>(`SELECT COUNT(*) AS total FROM community_entity_records o${statusOnly ? " FORCE INDEX (ix_community_entity_status_created)" : ""} WHERE ${predicate}`, values);
       const offset = (page - 1) * pageSize;
       const cursorMode = Boolean(query.beforeCreatedAt && query.beforeId);

@@ -1,6 +1,5 @@
 import { api } from './api';
 import { clearPickupPointSelection, readPickupPointSelection } from './pickup-point';
-import { clearCart, clearCheckoutDraft } from './cart';
 
 const SERVICE_AREA_STORAGE_KEY = 'selectedServiceArea';
 
@@ -37,15 +36,13 @@ export async function loadServiceAreaContext(allowedAreaId?: string): Promise<{
   const selected = areas.find((area) => area.id === stored?.id) ?? null;
   // A pickup point cannot outlive its service area.  This also catches an
   // interrupted old client where the area key was already gone but its point
-  // and cart were still stored locally.
+  // was still stored locally. Cart and checkout groups have their own area.
   // A campaign's area filter is not evidence that the saved area was removed.
   const storedAreaAvailable = enabledAreas.some((area) => area.id === stored?.id);
   const selectionWasInvalidated = Boolean((stored && !storedAreaAvailable) || (!stored && readPickupPointSelection()));
   if (selectionWasInvalidated) {
     clearServiceAreaSelection();
     clearPickupPointSelection();
-    clearCart();
-    clearCheckoutDraft();
   }
   return { areas, selected, selectionWasInvalidated };
 }

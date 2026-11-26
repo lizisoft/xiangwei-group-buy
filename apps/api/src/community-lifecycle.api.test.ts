@@ -1013,7 +1013,7 @@ describe("community group-buying API lifecycle", () => {
 
   it("rejects cross-point arrival and requires a super-admin emergency reason before confirming a difference", async () => {
     const fixture = await createOpenCampaign();
-    const order = await createAndPayOrder(fixture);
+    const order = await createAndPayOrder(fixture, 3);
     await closeCampaign(fixture.campaignId);
     const batchId = await dispatchCampaign(fixture);
     const otherPointId = `point-other-${randomUUID()}`;
@@ -1034,7 +1034,7 @@ describe("community group-buying API lifecycle", () => {
       createdAt: now,
     });
     await addPickupManager("manager-b", otherPointId);
-    const payload = arrivalPayload(fixture.skuId, { received: 1, short: 0, damaged: 1 });
+    const payload = arrivalPayload(fixture.skuId, { received: 2, short: 1, damaged: 0 });
     const arrivalUrl = `/api/v1/admin/community/dispatch-batches/${batchId}/arrival`;
     const crossPoint = await inject({
       method: "POST",
@@ -1090,15 +1090,33 @@ describe("community group-buying API lifecycle", () => {
       headers: { "x-demo-user-id": "operator", "x-demo-role": "OPERATOR" },
     });
     expect(confirmed.statusCode, confirmed.body).toBe(200);
-    expect(
-      (
-        await inject({
-          method: "GET",
-          url: `/api/v1/orders/${order.id}`,
-          headers: customer,
-        })
-      ).json().data.status,
-    ).toBe("READY_FOR_PICKUP");
+    const ready = await inject({ method: "GET", url: `/api/v1/orders/${order.id}`, headers: customer });
+    expect(ready.statusCode, ready.body).toBe(200);
+    expect(ready.json().data).toMatchObject({ status: "READY_FOR_PICKUP", totalCents: 4500 });
+
+    const exceptionId = ready.json().data.fulfillmentExceptions[0].id as string;
+    const finance = { "x-demo-user-id": "finance", "x-demo-role": "FINANCE" };
+    const refunded = await inject({
+      method: "POST", url: `/api/v1/admin/fulfillment-exceptions/${exceptionId}/refund`, headers: finance,
+      payload: { confirmationNote: "核对到货短少一份，按原路退回" },
+    });
+    expect(refunded.statusCode, refunded.body).toBe(200);
+    const afterSale = await inject({ method: "GET", url: "/api/v1/orders?pageSize=1&filter=AFTER", headers: customer });
+    expect(afterSale.statusCode, afterSale.body).toBe(200);
+    expect(afterSale.json().data.items).toMatchObject([{
+      id: order.id, status: "READY_FOR_PICKUP", totalCents: 4500,
+      partialRefunds: [{ exceptionId, status: "SUCCEEDED", amountCents: 1500 }],
+    }]);
+    const refund = (await store.listPartialRefundsByOrder(order.id))[0]!;
+    const ledger = await inject({
+      method: "GET", url: `/api/v1/admin/finance/ledger?referenceId=${encodeURIComponent(order.orderNo)}`, headers: finance,
+    });
+    expect(ledger.statusCode, ledger.body).toBe(200);
+    expect(ledger.json().data).toMatchObject({ total: 2 });
+    expect(ledger.json().data.items).toContainEqual(expect.objectContaining({
+      eventType: "PARTIAL_REFUND_SUCCEEDED", orderId: order.id, orderNo: order.orderNo, refundNo: refund.providerRefundNo,
+      debitCents: 1500, creditCents: 1500, isBalanced: true,
+    }));
   });
 
   it("only reads stable packing labels for a locked campaign's paid orders", async () => {

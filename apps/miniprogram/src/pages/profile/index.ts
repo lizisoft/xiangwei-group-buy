@@ -11,6 +11,7 @@ import { navigateToCustomerLogin } from "../../utils/auth-navigation";
 import { PageLoadCoordinator } from "../../utils/page-load-guard";
 import { PageActionCoordinator } from "../../utils/page-action-coordinator";
 import { compactPickupAddress } from "../../utils/pickup-label";
+import { isAfterSaleOrder } from "../../utils/consumer-display";
 
 interface OrderCounts {
   pending: number;
@@ -97,10 +98,7 @@ Page({
         active: 0,
         ready: 0,
         done: 0,
-        afterSale: orders.filter((order) =>
-          ["REFUNDING", "REFUNDED", "CANCELLED"].includes(order.status) ||
-          Boolean(order.communityQualityCases?.length),
-        ).length,
+        afterSale: orders.filter(isAfterSaleOrder).length,
       };
       for (const order of orders) {
         if (order.status === "PENDING_PAYMENT") counts.pending += 1;

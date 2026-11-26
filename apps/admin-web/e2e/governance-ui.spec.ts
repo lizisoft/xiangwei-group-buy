@@ -565,6 +565,23 @@ test("客服、运营、财务和超管从网页完成治理闭环", async ({
   await expect(qualityFinanceRow.getByRole("button", { name: "执行退款" })).toHaveCount(0);
   await page.getByRole("menuitem", { name: "账务流水", exact: true }).click();
   await expect(page.getByText("已平衡", { exact: true }).first()).toBeVisible();
+  const ledger = page.getByRole("region", { name: "财务流水" });
+  const refundRow = ledger.getByRole("row").filter({ hasText: "部分退款成功" }).filter({ hasText: qualityA.orderNo });
+  await expect(refundRow).toContainText("借 销售收入");
+  await expect(refundRow).toContainText("贷 支付清算");
+  const [orderDetails] = await Promise.all([
+    page.waitForEvent("popup"),
+    refundRow.getByRole("link", { name: qualityA.orderNo, exact: true }).click(),
+  ]);
+  await expect(orderDetails.getByRole("dialog", { name: `订单详情 · ${qualityA.orderNo}` })).toBeVisible();
+  await orderDetails.close();
+  const refundLink = refundRow.getByRole("link", { name: /^PR/ });
+  const refundNumber = (await refundLink.innerText()).trim();
+  const [refundDetails] = await Promise.all([page.waitForEvent("popup"), refundLink.click()]);
+  await expect(refundDetails.getByRole("textbox", { name: "退款检索" })).toHaveValue(refundNumber);
+  await expect(refundDetails.getByRole("row").filter({ hasText: refundNumber })).toHaveCount(1);
+  await expect(refundDetails.getByText("共 1 条", { exact: true })).toBeVisible();
+  await refundDetails.close();
   for (const width of [375, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

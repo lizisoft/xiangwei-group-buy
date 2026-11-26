@@ -207,7 +207,7 @@ export function registerOrderRoutes(
         page: 1,
         pageSize: query.pageSize,
         ...(statusesByFilter[query.filter] ? { statuses: statusesByFilter[query.filter] } : {}),
-        ...(query.filter === "AFTER" ? { includeCommunityQualityCases: true } : {}),
+        ...(query.filter === "AFTER" ? { includeAfterSale: true } : {}),
         ...(query.cursorAt ? { beforeCreatedAt: query.cursorAt, beforeId: query.cursorId } : {}),
       });
       return { data: { items: await views(page.items), hasMore: page.hasMore ?? false, nextCursor: page.nextCursor } };

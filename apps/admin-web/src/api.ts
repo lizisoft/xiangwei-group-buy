@@ -441,6 +441,9 @@ export interface RefundHistoryRow extends Refund { refundType: "FULL" | "PARTIAL
 export interface LedgerTransaction {
   id: string;
   referenceId: string;
+  orderId?: string | null;
+  orderNo?: string | null;
+  refundNo?: string | null;
   eventType: string;
   createdAt: string;
   debitCents: number;

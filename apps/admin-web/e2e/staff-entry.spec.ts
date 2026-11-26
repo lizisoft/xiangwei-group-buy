@@ -129,19 +129,6 @@ async function findStaffRow(page: Page, displayName: string) {
   return row;
 }
 
-async function findLedgerReference(page: Page, referenceId: string) {
-  const ledger = page.getByRole("region", { name: "财务流水" });
-  const reference = ledger.getByText(referenceId, { exact: true });
-  while ((await reference.count()) === 0) {
-    const nextPage = ledger.locator(
-      ".ant-pagination-next:not(.ant-pagination-disabled) button",
-    );
-    await expect(nextPage).toHaveCount(1);
-    await nextPage.click();
-  }
-  return reference;
-}
-
 test("超管从网页创建员工，临时密码改密与撤权后的默认页可恢复", async ({
   page,
   browser,
@@ -491,7 +478,7 @@ test("同一标签切换账号会清空旧工作区，客服和财务刷新只�
     },
   });
   expect(createdOrder.status(), await createdOrder.text()).toBe(201);
-  const order = (await createdOrder.json()).data as { id: string };
+  const order = (await createdOrder.json()).data as { id: string; orderNo: string };
   const paid = await staffFetch(request,
     `${apiBase}/api/v1/orders/${order.id}/pay/mock-confirm`,
     {
@@ -509,16 +496,17 @@ test("同一标签切换账号会清空旧工作区，客服和财务刷新只�
   expect(ledgerResponse.status(), await ledgerResponse.text()).toBe(200);
   const externalLedger = (await ledgerResponse.json()).data as { items: Array<{
     referenceId: string;
+    orderNo: string;
   }> };
   const externalEntry = externalLedger.items.find((entry) => entry.referenceId === order.id);
-  expect(externalEntry).toBeTruthy();
+  expect(externalEntry).toMatchObject({ orderNo: order.orderNo });
   const financeBeforeRefresh = financeReads.filter(url => url.includes("/finance/ledger")).length;
   const refundsBeforeRefresh = financeReads.filter(url => url.includes("/finance/refunds")).length;
   await page.getByRole("button", { name: "刷新" }).click();
   await expect.poll(() => financeReads.filter(url => url.includes("/finance/ledger")).length).toBeGreaterThanOrEqual(financeBeforeRefresh + 1);
   expect(financeReads.filter(url => url.includes("/finance/refunds")).length).toBe(refundsBeforeRefresh);
   await expect(
-    await findLedgerReference(page, externalEntry!.referenceId),
+    page.getByRole("region", { name: "财务流水" }).getByRole("link", { name: order.orderNo, exact: true }),
   ).toBeVisible();
   expect(failures).toEqual([]);
 });

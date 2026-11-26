@@ -102,6 +102,9 @@ const LABELS: Record<string, string> = {
   PAYMENT_SUCCEEDED: "支付成功",
   REFUND_SUCCEEDED: "退款成功",
   PARTIAL_REFUND_SUCCEEDED: "部分退款成功",
+  PAYMENT_CLEARING: "支付清算",
+  CUSTOMER_CONTRACT_LIABILITY: "合同负债",
+  SALES_REVENUE: "销售收入",
   PICKUP_CONFIRMED: "领取确认",
 
   STAFF_CREATED: "创建员工",

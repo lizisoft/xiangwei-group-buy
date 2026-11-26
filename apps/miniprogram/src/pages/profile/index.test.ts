@@ -5,9 +5,17 @@ type PageDefinition = {
   setData: (patch: Record<string, unknown>) => void;
   openOrders: (event: { currentTarget: { dataset: { filter?: string } } }) => void;
   loadArea: () => Promise<void>;
+  loadSummary: () => Promise<void>;
   logout: () => Promise<void>;
   openPickupLocation: () => void;
   callPickupPoint: () => void;
+};
+
+type OrdersPageDefinition = {
+  data: Record<string, unknown>;
+  setData: (patch: Record<string, unknown>) => void;
+  onShow: () => Promise<void>;
+  loadMore: () => Promise<void>;
 };
 
 describe("profile page protected entry behavior", () => {
@@ -96,6 +104,43 @@ describe("profile page protected entry behavior", () => {
     definition.openOrders.call(definition, { currentTarget: { dataset: { filter: "DONE" } } });
     expect(storage.get("orderFilter")).toBe("DONE");
     expect(navigateTo).toHaveBeenCalledWith({ url: "/pages/orders/index" });
+  });
+
+  it("counts a partially refunded order and opens it from the after-sales shortcut", async () => {
+    storage.set("hometown-demo-customer-session", true);
+    const { definition } = await loadPage();
+    const { api } = await import("../../utils/api");
+    const refunded = {
+      id: "refunded-order", orderNo: "HT-45", status: "READY_FOR_PICKUP", totalCents: 4500,
+      deliveryPlan: null, items: [], createdAt: "2026-09-30T10:00:00.000Z",
+      partialRefunds: [
+        { id: "refund", exceptionId: "difference", status: "SUCCEEDED", amountCents: 1500 },
+      ],
+    } as OrderDto;
+    const earlierRefund = { ...refunded, id: "earlier-refund", orderNo: "HT-15", createdAt: "2026-09-29T10:00:00.000Z" };
+    const ordinary = { ...refunded, id: "ordinary-order", partialRefunds: [] };
+    vi.spyOn(api, "listOrders").mockResolvedValue([refunded, earlierRefund, ordinary]);
+    vi.spyOn(api, "getMyProfile").mockRejectedValue(new Error("profile unavailable"));
+
+    await definition.loadSummary();
+
+    expect(definition.data).toMatchObject({ orderTotal: 3, counts: { ready: 3, afterSale: 2 } });
+
+    definition.openOrders({ currentTarget: { dataset: { filter: "AFTER" } } });
+    const nextCursor = { id: refunded.id, createdAt: refunded.createdAt };
+    const readPage = vi.spyOn(api, "listOrdersPage")
+      .mockResolvedValueOnce({ items: [refunded], hasMore: true, nextCursor })
+      .mockResolvedValueOnce({ items: [earlierRefund], hasMore: false, nextCursor: null });
+    let ordersPage!: OrdersPageDefinition;
+    vi.stubGlobal("Page", (page: OrdersPageDefinition) => { ordersPage = page; return page; });
+    await import("../orders/index");
+    ordersPage.setData = (patch) => Object.assign(ordersPage.data, patch);
+    await ordersPage.onShow();
+    expect(readPage).toHaveBeenNthCalledWith(1, 20, undefined, "AFTER");
+    expect(ordersPage.data.orders).toMatchObject([{ id: refunded.id, canPickup: true }]);
+    await ordersPage.loadMore();
+    expect(readPage).toHaveBeenNthCalledWith(2, 20, nextCursor, "AFTER");
+    expect(ordersPage.data.orders).toMatchObject([{ id: refunded.id }, { id: earlierRefund.id }]);
   });
 
   it("keeps area failures separate from the order summary and offers an area retry", async () => {

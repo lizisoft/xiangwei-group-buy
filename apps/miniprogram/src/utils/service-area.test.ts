@@ -6,11 +6,14 @@ describe("service area selection", () => {
     vi.unstubAllGlobals();
   });
 
-  it("clears the dependent pickup point when its saved service area is removed", async () => {
+  it("clears the dependent pickup point but keeps saved purchases when its area is removed", async () => {
+    const cart = { groups: [{ campaignId: "old-campaign" }, { campaignId: "other-campaign" }] };
+    const checkout = { campaignId: "other-campaign" };
     const storage = new Map<string, unknown>([
       ["selectedServiceArea", { id: "removed-area", name: "旧服务区", regionCode: "130000" }],
-      ["standardCart", { campaignId: "old-campaign" }],
-      ["checkoutDraft", { campaignId: "old-campaign" }],
+      ["standardCart", cart],
+      ["checkoutDraft", checkout],
+      ["multiCheckoutDraft", cart],
     ]);
     const clearPickupPointSelection = vi.fn();
     vi.stubGlobal("wx", {
@@ -29,8 +32,9 @@ describe("service area selection", () => {
 
     expect(context).toMatchObject({ areas: [], selected: null, selectionWasInvalidated: true });
     expect(storage.has("selectedServiceArea")).toBe(false);
-    expect(storage.has("standardCart")).toBe(false);
-    expect(storage.has("checkoutDraft")).toBe(false);
+    expect(storage.get("standardCart")).toEqual(cart);
+    expect(storage.get("checkoutDraft")).toEqual(checkout);
+    expect(storage.get("multiCheckoutDraft")).toEqual(cart);
     expect(clearPickupPointSelection).toHaveBeenCalledTimes(1);
   });
 

@@ -17,24 +17,47 @@ async function checkRefundLedgerLookup(store: CommerceStore) {
     });
   await store.saveOrder({
     id: "o1", orderNo: "HT-45", userId: "buyer", campaignId: "campaign", serviceAreaId: "area",
-    pickupPointId: "point", deliveryPlanId: "plan", status: "COMPLETED", totalCents: moneyCents(4500),
-    items: [], createdAt: date, expiresAt: date, paidAt: date, pickedUpAt: date,
+    pickupPointId: "point", deliveryPlanId: "plan", status: "READY_FOR_PICKUP", totalCents: moneyCents(4500),
+    items: [], createdAt: date, expiresAt: date, paidAt: date, pickedUpAt: null,
+  });
+  await store.saveOrder({
+    id: "o2", orderNo: "HT-OTHER", userId: "another-buyer", campaignId: "campaign", serviceAreaId: "area",
+    pickupPointId: "point", deliveryPlanId: "plan", status: "REFUNDED", totalCents: moneyCents(4500),
+    items: [], createdAt: date, expiresAt: date, paidAt: date, pickedUpAt: null,
   });
   for (const [id, orderId] of [["r1", "o1"], ["r2", "o1"], ["r3", "o2"]] as const) {
-    await store.savePartialRefund({ id, orderId, exceptionId: "shared-exception", createdAt: date } as PartialRefund);
+    await store.savePartialRefund({
+      id, orderId, exceptionId: "shared-exception", providerRefundNo: `RF-${id}`,
+      status: "SUCCEEDED", amountCents: moneyCents(1500), createdAt: date,
+    } as PartialRefund);
     await add(id, id, "PARTIAL_REFUND_SUCCEEDED");
   }
   await add("p1", "o1", "PAYMENT_SUCCEEDED");
+  await store.saveOrderRefund({ id: "f2", orderId: "o2", providerRefundNo: "RF-f2", createdAt: date, status: "SUCCEEDED" } as OrderRefund);
   await add("f2", "o2", "REFUND_SUCCEEDED");
   for (const referenceId of ["HT-45", "o1"]) {
     const first = await store.listFinanceLedgerPage({ referenceId, limit: 2 });
     expect(first.items.map(row => row.id)).toEqual(["r2", "r1"]);
+    expect(first.items).toMatchObject([
+      { orderId: "o1", orderNo: "HT-45", refundNo: "RF-r2" },
+      { orderId: "o1", orderNo: "HT-45", refundNo: "RF-r1" },
+    ]);
     expect(first.total).toBe(3);
     expect(first.nextCursor).toBeTruthy();
     const last = await store.listFinanceLedgerPage({ referenceId, limit: 2, cursor: first.nextCursor! });
-    expect(last.items.map(row => row.id)).toEqual(["p1"]);
+    expect(last.items).toMatchObject([{ id: "p1", orderId: "o1", orderNo: "HT-45", refundNo: null }]);
     expect(last).toMatchObject({ total: 3, nextCursor: null });
   }
+  const other = await store.listFinanceLedgerPage({ referenceId: "HT-OTHER", limit: 10 });
+  expect(other.items).toMatchObject([
+    { id: "r3", orderId: "o2", orderNo: "HT-OTHER", refundNo: "RF-r3" },
+    { id: "f2", orderId: "o2", orderNo: "HT-OTHER", refundNo: "RF-f2" },
+  ]);
+  const afterSale = await store.searchOrders({
+    userId: "buyer", statuses: ["REFUNDING", "REFUNDED", "CANCELLED"], includeAfterSale: true, pageSize: 1,
+  });
+  expect(afterSale.items).toMatchObject([{ id: "o1", status: "READY_FOR_PICKUP" }]);
+  expect(afterSale.hasMore).toBe(false);
   for (const [referenceId, ids] of [
     ["r1", ["r1"]], ["shared-exception", ["r3", "r2", "r1"]],
     ["o2", ["r3", "f2"]], ["unknown", []],
@@ -105,7 +128,7 @@ describe("bounded finance history pages", () => {
     await store.appendLedgerTransaction(entry("l-2", "order-1", "2026-09-29T00:00:00.000Z"));
     await store.appendLedgerTransaction(entry("l-3", "order-2", date));
     const first = await store.listFinanceLedgerPage({ limit: 1, referenceId: "order-1" });
-    expect(first.items.map(value => value.id)).toEqual(["l-1"]);
+    expect(first.items).toMatchObject([{ id: "l-1", orderId: null, orderNo: null, refundNo: null }]);
     expect(first.total).toBe(2);
     const second = await store.listFinanceLedgerPage({ limit: 1, referenceId: "order-1", ...(first.nextCursor ? { cursor: first.nextCursor } : {}) });
     expect(second.items.map(value => value.id)).toEqual(["l-2"]);

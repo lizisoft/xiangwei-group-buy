@@ -203,8 +203,8 @@ export interface StoreOrderSearchQuery {
   beforeId?: string | undefined;
   status?: string | undefined;
   statuses?: readonly string[] | undefined;
-  /** Include associated quality-aftercare orders alongside the selected statuses. */
-  includeCommunityQualityCases?: boolean | undefined;
+  /** Include orders with a quality case or partial refund alongside the selected statuses. */
+  includeAfterSale?: boolean | undefined;
   excludeStatuses?: readonly string[] | undefined;
   campaignId?: string | undefined;
   pickupPointId?: string | undefined;
@@ -254,7 +254,12 @@ export type ServiceAreaInterestPage = OperationsQueuePage<ServiceAreaInterest>;
 export interface FinanceRefundPageQuery { limit: number; status?: string; orderId?: string; reference?: string; cursor?: string }
 export interface FinanceRefundPage { items: Array<(OrderRefund | PartialRefund) & { refundType: "FULL" | "PARTIAL" }>; total: number; nextCursor: string | null; pageSize: number }
 export interface FinanceLedgerPageQuery { limit: number; referenceId?: string; cursor?: string }
-export interface FinanceLedgerPage { items: LedgerTransaction[]; total: number; nextCursor: string | null; pageSize: number }
+export interface FinanceLedgerEntry extends LedgerTransaction {
+  orderId: string | null;
+  orderNo: string | null;
+  refundNo: string | null;
+}
+export interface FinanceLedgerPage { items: FinanceLedgerEntry[]; total: number; nextCursor: string | null; pageSize: number }
 
 /** The complete persistence boundary for the single community group-buy product. */
 export interface CommerceStore {
@@ -1573,14 +1578,14 @@ export class MemoryStore implements CommerceStore {
     const pageSize = Math.max(1, Math.min(1000, Math.trunc(query.pageSize ?? 100)));
     const keyword = query.keyword?.trim().toLocaleLowerCase("zh-CN") ?? "";
     const users = new Map([...this.data.users.values()].map((value) => [value.id, value]));
-    const qualityOrderIds = query.includeCommunityQualityCases
-      ? new Set([...this.data.quality.values()].map((value) => value.orderId))
+    const afterSaleOrderIds = query.includeAfterSale
+      ? new Set([...this.data.quality.values(), ...this.data.partialRefunds.values()].map((value) => value.orderId))
       : null;
     const values = [...this.data.orders.values()]
       .map((value) => this.hydrateOrder(value.id)!)
       .filter((order) => !query.userId || order.userId === query.userId)
       .filter((order) => !query.status || order.status === query.status)
-      .filter((order) => !query.statuses || query.statuses.includes(order.status) || Boolean(qualityOrderIds?.has(order.id)))
+      .filter((order) => !query.statuses || query.statuses.includes(order.status) || Boolean(afterSaleOrderIds?.has(order.id)))
       .filter((order) => !query.excludeStatuses?.includes(order.status))
       .filter((order) => !query.campaignId || order.campaignId === query.campaignId)
       .filter((order) => !query.pickupPointId || order.pickupPointId === query.pickupPointId)
@@ -2122,8 +2127,24 @@ export class MemoryStore implements CommerceStore {
     }
     const all = entries.sort((a,b)=>Date.parse(b.createdAt)-Date.parse(a.createdAt)||b.id.localeCompare(a.id));
     const offset = query.cursor ? Number(Buffer.from(query.cursor, "base64url").toString("utf8")) : 0;
-    const page=all.slice(offset,offset+limit+1);
-    return {items:clone(page.slice(0,limit)), total:all.length, pageSize:limit, nextCursor:page.length>limit?Buffer.from(String(offset+limit)).toString("base64url"):null};
+    const page = all.slice(offset, offset + limit);
+    const fullRefundsByOrder = page.some((entry) => entry.referenceType === "ORDER" && entry.eventType === "REFUND_SUCCEEDED")
+      ? new Map([...this.data.orderRefunds.values()].map((refund) => [refund.orderId, refund]))
+      : null;
+    const items = page.map((entry): FinanceLedgerEntry => {
+      const partialRefund = entry.referenceType === "FULFILLMENT_EXCEPTION" && entry.eventType === "PARTIAL_REFUND_SUCCEEDED"
+        ? this.data.partialRefunds.get(entry.referenceId)
+        : undefined;
+      const order = this.data.orders.get(entry.referenceType === "ORDER" ? entry.referenceId : (partialRefund?.orderId ?? ""));
+      const refund = entry.referenceType === "ORDER" && entry.eventType === "REFUND_SUCCEEDED"
+        ? fullRefundsByOrder?.get(entry.referenceId)
+        : partialRefund;
+      return { ...clone(entry), orderId: order?.id ?? null, orderNo: order?.orderNo ?? null, refundNo: refund?.providerRefundNo ?? null };
+    });
+    return {
+      items, total: all.length, pageSize: limit,
+      nextCursor: offset + limit < all.length ? Buffer.from(String(offset + limit)).toString("base64url") : null,
+    };
   }
   public async saveAuditLog(v: AuditLog) {
     const key = JSON.stringify([v.requestId, v.action]);

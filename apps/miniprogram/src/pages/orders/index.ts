@@ -1,6 +1,6 @@
 import { formatDateTime, formatMoney } from "../../utils/format";
 import { api, AuthExpiredError, customerAuth, customerErrorMessage } from "../../utils/api";
-import { orderStatusCopy, orderStatusTone } from "../../utils/consumer-display";
+import { isAfterSaleOrder, orderStatusCopy, orderStatusTone } from "../../utils/consumer-display";
 import { navigateToCustomerLogin } from "../../utils/auth-navigation";
 import { PageLoadCoordinator } from "../../utils/page-load-guard";
 
@@ -36,11 +36,7 @@ function inFilter(order: OrderView, filter: string): boolean {
     ].includes(order.status);
   if (filter === "DONE") return ["PICKED_UP", "COMPLETED"].includes(order.status);
   if (filter === "READY") return order.status === "READY_FOR_PICKUP";
-  if (filter === "AFTER")
-    return (
-      ["REFUNDING", "REFUNDED", "CANCELLED"].includes(order.status) ||
-      Boolean(order.communityQualityCases?.length)
-    );
+  if (filter === "AFTER") return isAfterSaleOrder(order);
   return true;
 }
 function deliveryText(plan: DeliveryPlanDto | null): {
@@ -200,7 +196,7 @@ Page({
         };
       }));
       cachedOrders = { epoch: guard.epoch, generation: guard.generation, items, hasMore: page.hasMore, nextCursor: page.nextCursor };
-      this.setData({ orders: items, hasMore: page.hasMore });
+      this.setData({ orders: items.filter((order) => inFilter(order, activeFilter)), hasMore: page.hasMore });
     } catch (error) {
       if (!loadCoordinator.isCurrent(guard, customerAuth.captureSessionEpoch())) return;
       if (error instanceof AuthExpiredError) {

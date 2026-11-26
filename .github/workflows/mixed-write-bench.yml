@@ -1,0 +1,56 @@
+name: Isolated mixed write benchmark
+on:
+  push:
+    branches: ['bench/mixed-writes-20261126']
+permissions:
+  contents: read
+jobs:
+  measure:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { mode: ENTITY, orders: 10000 }
+          - { mode: LEGACY, orders: 1000 }
+          - { mode: LEGACY, orders: 10000 }
+    env:
+      PRODUCT_REVISION: 039a4068e9adc8289c1c26889a15983cc6359d7d
+      BENCH_OUT: ${{ github.workspace }}/bench-output
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 11.16.0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: pnpm }
+      - name: Prepare workspace
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter @hometown/domain build
+          pnpm --filter @hometown/api-contracts build
+      - name: Start private databases
+        run: |
+          password=$(openssl rand -hex 18)
+          echo "::add-mask::$password"
+          echo "BENCH_DB_PASSWORD=$password" >> "$GITHUB_ENV"
+          docker run -d --name mixed-db --cpus=2 --memory=2g -p 127.0.0.1:13306:3306 -e MYSQL_ROOT_PASSWORD="$password" -e MYSQL_ROOT_HOST=% mysql:8.4 --max-allowed-packet=256M --innodb-buffer-pool-size=512M
+          docker run -d --name mixed-redis --cpus=.5 --memory=256m -p 127.0.0.1:16379:6379 redis:7.4
+          for i in $(seq 1 75); do
+            if docker exec -e MYSQL_PWD="$password" mixed-db mysql --protocol=TCP -h127.0.0.1 -uroot -NBe 'SELECT 1' >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          docker exec -e MYSQL_PWD="$password" mixed-db mysql --protocol=TCP -h127.0.0.1 -uroot -NBe 'SELECT VERSION(),@@performance_schema'
+          docker exec mixed-redis redis-cli PING
+      - name: Measure isolated writes
+        working-directory: apps/api
+        run: node --import tsx bench/mixed/run.mjs ${{ matrix.mode }} ${{ matrix.orders }}
+      - name: Save stage measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mixed-${{ matrix.mode }}-${{ matrix.orders }}
+          path: bench-output/*.json
+          if-no-files-found: warn
+          retention-days: 7
+

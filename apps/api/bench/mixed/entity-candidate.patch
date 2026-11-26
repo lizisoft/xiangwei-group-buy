@@ -1,0 +1,121 @@
+diff --git a/apps/api/src/modules/core/entity-store-plan.test.ts b/apps/api/src/modules/core/entity-store-plan.test.ts
+index fd647f7..1b067f5 100644
+--- a/apps/api/src/modules/core/entity-store-plan.test.ts
++++ b/apps/api/src/modules/core/entity-store-plan.test.ts
+@@ -8,7 +8,7 @@ describe("Entity Store indexed read plans", () => {
+     const infrastructure = new Set([
+       "constructor", "readSnapshot", "transaction", "health", "databaseNow", "close",
+       "getPersistenceMode", "setDatabaseNowForTests", "hydrateOrder", "linesForOrder", "claimRefund",
+-      "exportState", "importState", "importEntityRows", "exportEntityRows",
++      "exportState", "importState", "importEntityRows", "exportEntityRows", "snapshotForRollback",
+     ]);
+     const unplanned: string[] = [];
+     for (const method of Object.getOwnPropertyNames(MemoryStore.prototype)) {
+diff --git a/apps/api/src/modules/core/mysql-store.ts b/apps/api/src/modules/core/mysql-store.ts
+index 0b399e9..7a031f9 100644
+--- a/apps/api/src/modules/core/mysql-store.ts
++++ b/apps/api/src/modules/core/mysql-store.ts
+@@ -77,6 +77,11 @@ export class AggregatePayloadMonitor {
+ }
+ 
+ class AggregateSnapshot extends MemoryStore {
++  // This instance belongs to one SQL scope. A failed write rolls back in MySQL
++  // and discards this instance; no caller can subsequently observe its contents.
++  protected override snapshotForRollback(): null {
++    return null;
++  }
+   public constructor(private readonly connection: PoolConnection, raw: string) {
+     super(false);
+     this.importState(raw);
+@@ -215,6 +220,11 @@ export class MysqlStore extends MemoryStore implements CommerceStore {
+     return rows;
+   }
+   private async mergeEntityRows(scope: Scope, collection: EntityCollection, rows: EntityRow[]): Promise<void> {
++    if (!rows.length) {
++      // Register empty collections as well: a subsequent write can insert their first row.
++      if (!scope.loaded.has(collection)) scope.loaded.set(collection, new Map());
++      return;
++    }
+     const decoded = rows.map((row) => ({ row, document: decodeEntityDocument(collection, row.document) }));
+     let entries: Array<[string, unknown]>;
+     if (collection === "lines") {
+@@ -925,7 +935,7 @@ export class MysqlStore extends MemoryStore implements CommerceStore {
+       if (mode === "LEGACY") {
+         const serialized = (scope.snapshot as AggregateSnapshot).serialize();
+         const payloadBytes = Buffer.byteLength(serialized, "utf8");
+-        await connection.query(
++        await connection.execute(
+           "UPDATE community_product_state SET payload=?,updated_at=UTC_TIMESTAMP(3) WHERE id=1",
+           [serialized],
+         );
+diff --git a/apps/api/src/modules/core/store.ts b/apps/api/src/modules/core/store.ts
+index e834059..59d7cc0 100644
+--- a/apps/api/src/modules/core/store.ts
++++ b/apps/api/src/modules/core/store.ts
+@@ -774,6 +774,12 @@ const emptyState = (): MemoryState => ({
+   reconciliationReviews: new Map(),
+ });
+ const clone = <T>(value: T): T => structuredClone(value);
++
++function collectionState(value: MemoryState[keyof MemoryState]) {
++  if (value instanceof Map) return [...value.entries()];
++  if (value instanceof Set) return [...value];
++  return value;
++}
+ const newest = <T extends { createdAt: string }>(values: T[]): T[] =>
+   values.sort((a, b) => {
+     const timestampOrder = b.createdAt.localeCompare(a.createdAt);
+@@ -792,15 +798,13 @@ export class MemoryStore implements CommerceStore {
+   public constructor(seed = false) {
+     void seed;
+   }
++  protected snapshotForRollback(): MemoryState | null {
++    return clone(this.data);
++  }
+   protected exportState(): string {
+     const output: Record<string, unknown> = {};
+     for (const [key, value] of Object.entries(this.data)) {
+-      output[key] =
+-        value instanceof Map
+-          ? [...value.entries()]
+-          : value instanceof Set
+-            ? [...value]
+-            : value;
++      output[key] = collectionState(value);
+     }
+     return JSON.stringify(output);
+   }
+@@ -945,8 +949,9 @@ export class MemoryStore implements CommerceStore {
+   }
+   /** Internal adapter hook: return a stable serialized view of one in-memory collection. */
+   public exportEntityRows(collection: string): Array<[string, unknown]> {
+-    const state = JSON.parse(this.exportState()) as Record<string, unknown>;
+-    const value = state[collection];
++    if (!Object.hasOwn(this.data, collection)) return [];
++    const raw = collectionState(this.data[collection as keyof MemoryState]);
++    const value: unknown = JSON.parse(JSON.stringify(raw));
+     if (collection === "audits") {
+       return (Array.isArray(value) ? value as AuditLog[] : []).map((audit) => [JSON.stringify([audit.requestId, audit.action]), audit]);
+     }
+@@ -984,7 +989,7 @@ export class MemoryStore implements CommerceStore {
+       release = resolve;
+     });
+     await before;
+-    const snapshot = clone(this.data);
++    const snapshot = this.snapshotForRollback();
+     try {
+       const actor = getCurrentInternalWriteActor();
+       if (actor) {
+@@ -1032,8 +1037,10 @@ export class MemoryStore implements CommerceStore {
+       }
+       return await work(this);
+     } catch (error) {
+-      this.data = snapshot;
+-      this.auditDedupeKeys = new Set(snapshot.audits.map((value) => JSON.stringify([value.requestId, value.action])));
++      if (snapshot) {
++        this.data = snapshot;
++        this.auditDedupeKeys = new Set(snapshot.audits.map((value) => JSON.stringify([value.requestId, value.action])));
++      }
+       throw error;
+     } finally {
+       release();

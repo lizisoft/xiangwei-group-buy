@@ -34,7 +34,7 @@ export async function prepare(mode,state) {
 }
 
 export async function waits(db,name){
-  const [rows]=await db.execute(`SELECT l.OBJECT_NAME AS obj,l.INDEX_NAME AS idx,l.LOCK_DATA AS rowKey,COUNT(*) AS n
+  const [rows]=await db.execute(`SELECT l.OBJECT_NAME AS obj,l.INDEX_NAME AS idx,l.LOCK_DATA AS rowKey,COUNT(DISTINCT w.REQUESTING_ENGINE_TRANSACTION_ID) AS n
     FROM performance_schema.data_lock_waits w
     JOIN performance_schema.data_locks l ON l.ENGINE=w.ENGINE AND l.ENGINE_LOCK_ID=w.REQUESTING_ENGINE_LOCK_ID
     WHERE l.OBJECT_SCHEMA=? GROUP BY l.OBJECT_NAME,l.INDEX_NAME,l.LOCK_DATA`,[name]);

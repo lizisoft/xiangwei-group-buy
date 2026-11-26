@@ -3,7 +3,7 @@ import { buildApp } from '../../src/app.ts';
 import { loadConfig } from '../../src/config.ts';
 import { MysqlStore } from '../../src/modules/core/mysql-store.ts';
 import { MockPaymentProvider, WechatPaymentProvider } from '../../src/modules/payments/payment-provider.ts';
-import { observeStore } from './metrics.mjs';
+import { observeStore,requestLane } from './metrics.mjs';
 import { secret } from './fixture.mjs';
 
 const {MIX_DB:name, BENCH_KEYS:keys, BENCH_DB_PASSWORD:password}=process.env;
@@ -17,6 +17,7 @@ const decoder=new WechatPaymentProvider({privateKeyPath:join(keys,'priv.pem'),pu
 const provider=new MockPaymentProvider();
 provider.parseNotification=decoder.parseNotification.bind(decoder);
 const app=await buildApp({store,config,paymentProvider:provider,logger:false,subscriptionMessageProvider:{send:async()=>{throw Error('No external delivery in benchmark')}}});
+app.addHook('onRequest',(request,_reply,done)=>requestLane.run(request.url.split('?')[0],done));
 await app.listen({host:'127.0.0.1',port:13181});
 process.on('message',async msg=>{
   if(msg==='start'){probe.start();process.send({kind:'started'});}

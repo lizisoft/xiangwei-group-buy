@@ -8,19 +8,19 @@ export function stats(values) {
 
 // Observation only. The driver's SQL, bind parameters and transaction boundaries are unchanged.
 export function observeStore(store) {
-  let samples, active=false, cpu, start, peak=0;
+  let samples, byLane, active=false, cpu, start, peak=0;
   const pool=store.pool;
   const acquire=pool.getConnection.bind(pool);
   pool.getConnection=async()=>{
     const t=performance.now(); const connection=await acquire();
     if(active)samples.pool.push(performance.now()-t);
-    let locked;
+    let locked, lane;
     for(const method of ['query','execute']){
       const call=connection[method].bind(connection);
       connection[method]=async(sql,...args)=>{
         const clock=performance.now(); const result=await call(sql,...args);
         if(active && sql==='SELECT id FROM community_product_state WHERE id=1 FOR UPDATE'){
-          locked=performance.now();samples.acquire.push(locked-clock);
+          locked=performance.now();samples.acquire.push(locked-clock);lane=requestLane.getStore()??'background';
         }else if(active && locked!==undefined && sql.startsWith('SELECT payload FROM community_product_state')){
           samples.payloadRead.push(performance.now()-clock);
         }else if(active && locked!==undefined && sql.startsWith('UPDATE community_product_state SET payload=')){
@@ -33,7 +33,7 @@ export function observeStore(store) {
       const finish=connection[method].bind(connection);
       connection[method]=async(...args)=>{
         const value=await finish(...args);
-        if(active && locked!==undefined)samples.hold.push(performance.now()-locked);
+        if(active && locked!==undefined){ const ms=performance.now()-locked;samples.hold.push(ms);(byLane[lane]??=[]).push(ms); }
         locked=undefined;
         return value;
       };
@@ -43,8 +43,11 @@ export function observeStore(store) {
   const sampler=setInterval(()=>{if(active)peak=Math.max(peak,process.memoryUsage.rss());},100);
   sampler.unref();
   return {
-    start(){ samples={pool:[],acquire:[],hold:[],payloadRead:[],payloadWrite:[]};peak=process.memoryUsage.rss();cpu=process.cpuUsage();start=performance.now();active=true; },
-    end(){ active=false; const usage=process.cpuUsage(cpu);return {pool:stats(samples.pool),lockSql:stats(samples.acquire),hold:stats(samples.hold),payloadRead:stats(samples.payloadRead),payloadWrite:stats(samples.payloadWrite),windowMs:performance.now()-start,apiCpuMs:(usage.system+usage.user)/1000,peakRssMiB:peak/1048576}; }
+    start(){ samples={pool:[],acquire:[],hold:[],payloadRead:[],payloadWrite:[]};byLane={};peak=process.memoryUsage.rss();cpu=process.cpuUsage();start=performance.now();active=true; },
+    end(){ active=false; const usage=process.cpuUsage(cpu);return {pool:stats(samples.pool),lockSql:stats(samples.acquire),hold:stats(samples.hold),holdsByLane:Object.fromEntries(Object.entries(byLane).map(([k,v])=>[k,stats(v)])),payloadRead:stats(samples.payloadRead),payloadWrite:stats(samples.payloadWrite),windowMs:performance.now()-start,apiCpuMs:(usage.system+usage.user)/1000,peakRssMiB:peak/1048576}; }
   };
 }
+
+import { AsyncLocalStorage } from 'node:async_hooks';
+export const requestLane=new AsyncLocalStorage();
 

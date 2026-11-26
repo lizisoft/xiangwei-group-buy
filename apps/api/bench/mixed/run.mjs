@@ -23,6 +23,10 @@ const keys={priv:pair.privateKey,aes:randomBytes(16).toString('hex')};
 await writeFile(join(keyDir,'priv.pem'),pair.privateKey,{mode:0o600});
 await writeFile(join(keyDir,'pub.pem'),pair.publicKey);
 const state=await fixture(size);
+if(variant==='far-deadline-control'){
+  const far=new Date(Date.now()+48*3600000).toISOString();
+  for(const [,w] of state.windows)w.deadlineAt=far;
+}
 const check=await connection();
 const [[sqlInfo]]=await check.query('SELECT VERSION() AS mysql,@@innodb_flush_log_at_trx_commit AS flushAtCommit,@@innodb_buffer_pool_size AS bufferPool');
 await check.end();

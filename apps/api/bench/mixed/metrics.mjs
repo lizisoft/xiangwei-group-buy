@@ -15,15 +15,20 @@ export function observeStore(store) {
     const t=performance.now(); const connection=await acquire();
     if(active)samples.pool.push(performance.now()-t);
     let locked;
-    const query=connection.query.bind(connection);
-    connection.query=async(sql,...args)=>{
-      const clock=performance.now();
-      const result=await query(sql,...args);
-      if(active && sql==='SELECT id FROM community_product_state WHERE id=1 FOR UPDATE'){
-        locked=performance.now();samples.acquire.push(locked-clock);
-      }
-      return result;
-    };
+    for(const method of ['query','execute']){
+      const call=connection[method].bind(connection);
+      connection[method]=async(sql,...args)=>{
+        const clock=performance.now(); const result=await call(sql,...args);
+        if(active && sql==='SELECT id FROM community_product_state WHERE id=1 FOR UPDATE'){
+          locked=performance.now();samples.acquire.push(locked-clock);
+        }else if(active && locked!==undefined && sql.startsWith('SELECT payload FROM community_product_state')){
+          samples.payloadRead.push(performance.now()-clock);
+        }else if(active && locked!==undefined && sql.startsWith('UPDATE community_product_state SET payload=')){
+          samples.payloadWrite.push(performance.now()-clock);
+        }
+        return result;
+      };
+    }
     for(const method of ['commit','rollback']){
       const finish=connection[method].bind(connection);
       connection[method]=async(...args)=>{
@@ -38,8 +43,8 @@ export function observeStore(store) {
   const sampler=setInterval(()=>{if(active)peak=Math.max(peak,process.memoryUsage.rss());},100);
   sampler.unref();
   return {
-    start(){ samples={pool:[],acquire:[],hold:[]};peak=process.memoryUsage.rss();cpu=process.cpuUsage();start=performance.now();active=true; },
-    end(){ active=false; const usage=process.cpuUsage(cpu);return {pool:stats(samples.pool),lockSql:stats(samples.acquire),hold:stats(samples.hold),windowMs:performance.now()-start,apiCpuMs:(usage.system+usage.user)/1000,peakRssMiB:peak/1048576}; }
+    start(){ samples={pool:[],acquire:[],hold:[],payloadRead:[],payloadWrite:[]};peak=process.memoryUsage.rss();cpu=process.cpuUsage();start=performance.now();active=true; },
+    end(){ active=false; const usage=process.cpuUsage(cpu);return {pool:stats(samples.pool),lockSql:stats(samples.acquire),hold:stats(samples.hold),payloadRead:stats(samples.payloadRead),payloadWrite:stats(samples.payloadWrite),windowMs:performance.now()-start,apiCpuMs:(usage.system+usage.user)/1000,peakRssMiB:peak/1048576}; }
   };
 }
 

@@ -14,7 +14,8 @@ import { stats } from './metrics.mjs';
 const mode=process.argv[2], size=Number(process.argv[3]), output=process.env.BENCH_OUT;
 if(!['LEGACY','ENTITY'].includes(mode)||![1000,10000].includes(size)||!output||process.env.GITHUB_ACTIONS!=='true')
   throw Error('Run on the dedicated disposable runner');
-const path=join(output,mode+'-'+size+'.json');
+const variant=process.env.BENCH_VARIANT??'baseline';
+const path=join(output,mode+'-'+size+'-'+variant+'.json');
 await mkdir(output,{recursive:true});
 const keyDir=await mkdtemp(join(tmpdir(),'mixed-'));
 const pair=generateKeyPairSync('rsa',{modulusLength:2048,publicKeyEncoding:{type:'spki',format:'pem'},privateKeyEncoding:{type:'pkcs8',format:'pem'}});
@@ -25,7 +26,7 @@ const state=await fixture(size);
 const check=await connection();
 const [[sqlInfo]]=await check.query('SELECT VERSION() AS mysql,@@innodb_flush_log_at_trx_commit AS flushAtCommit,@@innodb_buffer_pool_size AS bufferPool');
 await check.end();
-const report={mode,size,base:process.env.PRODUCT_REVISION,experiment:process.env.GITHUB_SHA,run:process.env.GITHUB_RUN_ID,sqlInfo,cpu:cpus()[0].model,vcpus:availableParallelism(),ramMiB:Math.round(totalmem()/1048576),node:process.version,stages:[]};
+const report={mode,size,variant,base:process.env.PRODUCT_REVISION,experiment:process.env.GITHUB_SHA,run:process.env.GITHUB_RUN_ID,sqlInfo,cpu:cpus()[0].model,vcpus:availableParallelism(),ramMiB:Math.round(totalmem()/1048576),node:process.version,stages:[]};
 async function save(){await writeFile(path,JSON.stringify(report,null,2));}
 function next(child,kind,action){
   return new Promise((resolve,reject)=>{
@@ -75,21 +76,21 @@ async function stage(rate,seconds,tag){
     const active=new Set(), samples=Object.fromEntries(lanes.map(l=>[l,[]])),dispatch=[],lockSamples={};
     const innodbBefore=await counters(db);
     await next(child,'started','start');
-    let polling=true, polls=0, waitingPolls=0, missed=0, completedByDeadline=0,maxInflight=0;
+    let polling=true, observerError=null, polls=0, waitingPolls=0, missed=0, completedByDeadline=0,maxInflight=0;
     const pollingTask=(async()=>{
       while(polling){
         const rows=await waits(db,name);polls++;if(rows.length)waitingPolls++;
         for(const w of rows){const k=w.obj+'/'+w.idx+'/'+w.rowKey;const x=lockSamples[k]??={sum:0,peak:0,polls:0};x.sum+=Number(w.n);x.peak=Math.max(x.peak,Number(w.n));x.polls++;}
         if(polling)await sleep(100);
       }
-    })();
+    })().catch(e=>{observerError=e.message;});
     const start=performance.now(),deadline=start+planned/rate*1000,window=deadline-start;
     for(let j=0;j<planned;j++){
       // Stations A and B arrive together; order and notify follow at half a cycle.
       const scheduled=start+(4*Math.floor(j/4)+(j%4>=2?2:0))*1000/rate;
       const delay=scheduled-performance.now();if(delay>0)await sleep(delay);
       const l=lanes[j%4],i=Math.floor(j/4)+2;
-      if(active.size>=16){missed++;continue;}
+      if(active.size>=Number(process.env.BENCH_INFLIGHT??16)){missed++;continue;}
       dispatch.push(Math.max(0,performance.now()-scheduled));
       const work=run(l,i,packets[j]).then(()=>{
         const end=performance.now();samples[l].push(end-scheduled);
@@ -103,6 +104,7 @@ async function stage(rate,seconds,tag){
     const end=Math.max(last,deadline), elapsed=end-start;
     const measured=await next(child,'sample','end');
     polling=false;await pollingTask;
+    if(observerError)throw Error('Database monitor disconnected: '+observerError);
     const innodbAfter=await counters(db);
     const n=Object.values(samples).reduce((a,x)=>a+x.length,0);
     const perLane=Object.fromEntries(lanes.map(l=>[l,stats(samples[l])]));
@@ -123,6 +125,10 @@ async function stage(rate,seconds,tag){
   }
 }
 try {
+  if(process.env.BENCH_PLAN){
+    for(const [rate,seconds] of JSON.parse(process.env.BENCH_PLAN))await stage(rate,seconds,'match');
+    report.finished=true;await save();
+  }else{
   const rates=mode==='ENTITY'?[4,8,16,32,64,96,128]:size===1000?[2,4,8,16,32]:[.5,1,2,4,8];
   let good=0,bad=0;
   for(const r of rates){
@@ -140,5 +146,6 @@ try {
     if(!repeat.pass){const fallback=report.stages.filter(s=>s.pass&&s.rate<good).at(-1);if(fallback)await stage(fallback.rate,Math.min(60,4*(slots(size)-3)/fallback.rate),'confirm-lower');}
   }
   report.finished=true;await save();
+  }
 } catch(error){report.failure=error.stack;await save();throw error;}
 

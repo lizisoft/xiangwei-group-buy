@@ -1,0 +1,61 @@
+diff --git a/apps/api/src/modules/core/mysql-store.ts b/apps/api/src/modules/core/mysql-store.ts
+index 0b399e9..4e5dca0 100644
+--- a/apps/api/src/modules/core/mysql-store.ts
++++ b/apps/api/src/modules/core/mysql-store.ts
+@@ -77,6 +77,11 @@ export class AggregatePayloadMonitor {
+ }
+ 
+ class AggregateSnapshot extends MemoryStore {
++  // This instance belongs to one SQL scope. A failed write rolls back in MySQL
++  // and discards this instance; no caller can subsequently observe its contents.
++  protected override snapshotForRollback(): null {
++    return null;
++  }
+   public constructor(private readonly connection: PoolConnection, raw: string) {
+     super(false);
+     this.importState(raw);
+@@ -925,7 +930,7 @@ export class MysqlStore extends MemoryStore implements CommerceStore {
+       if (mode === "LEGACY") {
+         const serialized = (scope.snapshot as AggregateSnapshot).serialize();
+         const payloadBytes = Buffer.byteLength(serialized, "utf8");
+-        await connection.query(
++        await connection.execute(
+           "UPDATE community_product_state SET payload=?,updated_at=UTC_TIMESTAMP(3) WHERE id=1",
+           [serialized],
+         );
+diff --git a/apps/api/src/modules/core/store.ts b/apps/api/src/modules/core/store.ts
+index e834059..f155477 100644
+--- a/apps/api/src/modules/core/store.ts
++++ b/apps/api/src/modules/core/store.ts
+@@ -792,6 +792,9 @@ export class MemoryStore implements CommerceStore {
+   public constructor(seed = false) {
+     void seed;
+   }
++  protected snapshotForRollback(): MemoryState | null {
++    return clone(this.data);
++  }
+   protected exportState(): string {
+     const output: Record<string, unknown> = {};
+     for (const [key, value] of Object.entries(this.data)) {
+@@ -984,7 +987,7 @@ export class MemoryStore implements CommerceStore {
+       release = resolve;
+     });
+     await before;
+-    const snapshot = clone(this.data);
++    const snapshot = this.snapshotForRollback();
+     try {
+       const actor = getCurrentInternalWriteActor();
+       if (actor) {
+@@ -1032,8 +1035,10 @@ export class MemoryStore implements CommerceStore {
+       }
+       return await work(this);
+     } catch (error) {
+-      this.data = snapshot;
+-      this.auditDedupeKeys = new Set(snapshot.audits.map((value) => JSON.stringify([value.requestId, value.action])));
++      if (snapshot) {
++        this.data = snapshot;
++        this.auditDedupeKeys = new Set(snapshot.audits.map((value) => JSON.stringify([value.requestId, value.action])));
++      }
+       throw error;
+     } finally {
+       release();

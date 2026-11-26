@@ -2,7 +2,7 @@ name: Quality
 
 on:
   push:
-    branches-ignore: ['bench/mixed-writes-20261126']
+    branches-ignore: ['bench/mixed-writes-20261126','bench/mixed-write-comparison-20261126']
   pull_request:
   workflow_dispatch:
 

@@ -1,56 +1,80 @@
-name: Isolated mixed write benchmark
+name: Matched mixed write experiment
 on:
   push:
-    branches: ['bench/mixed-writes-20261126']
+    branches: ['bench/mixed-write-comparison-20261126']
 permissions:
   contents: read
 jobs:
-  measure:
+  compare:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { mode: ENTITY, orders: 10000 }
-          - { mode: LEGACY, orders: 1000 }
-          - { mode: LEGACY, orders: 10000 }
+          - { mode: LEGACY, orders: 1000, dbmem: 2g, inflight: 16, plan: '[[6,60],[8,60],[12,36]]', pair: yes }
+          - { mode: LEGACY, orders: 10000, dbmem: 4g, inflight: 4, plan: '[[0.5,40],[1,24]]', pair: yes }
+          - { mode: LEGACY, orders: 10000, dbmem: 2g, inflight: 16, plan: '[[0.5,24],[1,24]]', pair: reproduce }
     env:
       PRODUCT_REVISION: 039a4068e9adc8289c1c26889a15983cc6359d7d
       BENCH_OUT: ${{ github.workspace }}/bench-output
+      BENCH_PLAN: ${{ matrix.plan }}
+      BENCH_INFLIGHT: ${{ matrix.inflight }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with: { version: 11.16.0 }
       - uses: actions/setup-node@v4
         with: { node-version: '22', cache: pnpm }
-      - name: Prepare workspace
+      - name: Prepare runtime
         run: |
           pnpm install --frozen-lockfile
           pnpm --filter @hometown/domain build
           pnpm --filter @hometown/api-contracts build
-      - name: Start private databases
+          docker pull mysql:8.4
+          docker pull redis:7.4
+      - name: Matched runs on the same runner
+        shell: bash
         run: |
+          set -eu
+          mkdir -p "$BENCH_OUT"
+          variants="baseline candidate"
+          if [ "${{ matrix.pair }}" = reproduce ]; then variants="reproduce"; fi
           password=$(openssl rand -hex 18)
           echo "::add-mask::$password"
-          echo "BENCH_DB_PASSWORD=$password" >> "$GITHUB_ENV"
-          docker run -d --name mixed-db --cpus=2 --memory=2g -p 127.0.0.1:13306:3306 -e MYSQL_ROOT_PASSWORD="$password" -e MYSQL_ROOT_HOST=% mysql:8.4 --max-allowed-packet=256M --innodb-buffer-pool-size=512M
-          docker run -d --name mixed-redis --cpus=.5 --memory=256m -p 127.0.0.1:16379:6379 redis:7.4
-          for i in $(seq 1 75); do
-            if docker exec -e MYSQL_PWD="$password" mixed-db mysql --protocol=TCP -h127.0.0.1 -uroot -NBe 'SELECT 1' >/dev/null 2>&1; then break; fi
-            sleep 2
+          export BENCH_DB_PASSWORD="$password"
+          for variant in $variants; do
+            if [ "$variant" = candidate ]; then git apply apps/api/bench/mixed/candidate.patch; fi
+            db="mixed-db-$variant"
+            cache="mixed-redis-$variant"
+            docker run -d --name "$db" --cpus=2 --memory=${{ matrix.dbmem }} -p 127.0.0.1:13306:3306 -e MYSQL_ROOT_PASSWORD="$password" -e MYSQL_ROOT_HOST=% mysql:8.4 --max-allowed-packet=256M --innodb-buffer-pool-size=512M
+            docker run -d --name "$cache" --cpus=.5 --memory=256m -p 127.0.0.1:16379:6379 redis:7.4
+            for i in $(seq 1 75); do
+              if docker exec -e MYSQL_PWD="$password" "$db" mysql --protocol=TCP -h127.0.0.1 -uroot -NBe 'SELECT 1' >/dev/null 2>&1; then break; fi
+              sleep 2
+            done
+            docker exec "$cache" redis-cli PING
+            (while true; do
+               date -u +'%FT%TZ'
+               df --output=avail / | tail -1
+               docker stats --no-stream --format '{{.Name}} {{.MemUsage}} {{.CPUPerc}}' "$db"
+               sleep 4
+             done) > "$BENCH_OUT/resources-$variant.txt" &
+            monitor=$!
+            set +e
+            (cd apps/api && BENCH_VARIANT="$variant" node --import tsx bench/mixed/run.mjs ${{ matrix.mode }} ${{ matrix.orders }})
+            rc=$?
+            set -e
+            kill "$monitor" || true
+            docker inspect --format '{{json .State}}' "$db" | tee -a "$BENCH_OUT/resources-$variant.txt"
+            df -h / | tee -a "$BENCH_OUT/resources-$variant.txt"
+            docker stop "$db" "$cache" >/dev/null || true
+            if [ "$rc" != 0 ]; then exit "$rc"; fi
           done
-          docker exec -e MYSQL_PWD="$password" mixed-db mysql --protocol=TCP -h127.0.0.1 -uroot -NBe 'SELECT VERSION(),@@performance_schema'
-          docker exec mixed-redis redis-cli PING
-      - name: Measure isolated writes
-        working-directory: apps/api
-        run: node --import tsx bench/mixed/run.mjs ${{ matrix.mode }} ${{ matrix.orders }}
-      - name: Save stage measurements
-        if: always()
+      - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mixed-${{ matrix.mode }}-${{ matrix.orders }}
-          path: bench-output/*.json
-          if-no-files-found: warn
+          name: mixed-${{ matrix.mode }}-${{ matrix.orders }}-${{ matrix.pair }}
+          path: bench-output/
           retention-days: 7
 

@@ -8,7 +8,7 @@ describe("Entity Store indexed read plans", () => {
     const infrastructure = new Set([
       "constructor", "readSnapshot", "transaction", "health", "databaseNow", "close",
       "getPersistenceMode", "setDatabaseNowForTests", "hydrateOrder", "linesForOrder", "claimRefund",
-      "exportState", "importState", "importEntityRows", "exportEntityRows",
+      "exportState", "importState", "importEntityRows", "exportEntityRows", "snapshotForRollback",
     ]);
     const unplanned: string[] = [];
     for (const method of Object.getOwnPropertyNames(MemoryStore.prototype)) {
@@ -48,6 +48,15 @@ describe("Entity Store indexed read plans", () => {
 });
 
 describe("Entity Store record projections", () => {
+  it("exports detached JSON values for a requested collection", async () => {
+    const store = new MemoryStore(false);
+    const now = new Date().toISOString();
+    await store.saveUser({ id: "u", status: "ACTIVE", wechatOpenId: null, createdAt: now, displayName: "原值" });
+    const [[, exported]] = store.exportEntityRows("users") as [[string, { displayName: string }]];
+    exported.displayName = "外部修改";
+    expect((await store.getUser("u"))?.displayName).toBe("原值");
+    expect(store.exportEntityRows("missing-collection")).toEqual([]);
+  });
   it("keeps request-scoped receipt uniqueness and composite lookup fields", () => {
     const record = toEntityRecord("pickupReceipts", "receipt-a", {
       id: "receipt-a", orderId: "order-a", pickupRequestId: "request-a", deliveryPlanId: "plan-a", createdAt: "2026-09-28T01:02:03.000Z",

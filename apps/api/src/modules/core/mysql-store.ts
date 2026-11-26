@@ -77,6 +77,11 @@ export class AggregatePayloadMonitor {
 }
 
 class AggregateSnapshot extends MemoryStore {
+  // This instance belongs to one SQL scope. A failed write rolls back in MySQL
+  // and discards this instance; no caller can subsequently observe its contents.
+  protected override snapshotForRollback(): null {
+    return null;
+  }
   public constructor(private readonly connection: PoolConnection, raw: string) {
     super(false);
     this.importState(raw);
@@ -215,6 +220,11 @@ export class MysqlStore extends MemoryStore implements CommerceStore {
     return rows;
   }
   private async mergeEntityRows(scope: Scope, collection: EntityCollection, rows: EntityRow[]): Promise<void> {
+    if (!rows.length) {
+      // Register empty collections as well: a subsequent write can insert their first row.
+      if (!scope.loaded.has(collection)) scope.loaded.set(collection, new Map());
+      return;
+    }
     const decoded = rows.map((row) => ({ row, document: decodeEntityDocument(collection, row.document) }));
     let entries: Array<[string, unknown]>;
     if (collection === "lines") {
@@ -925,7 +935,7 @@ export class MysqlStore extends MemoryStore implements CommerceStore {
       if (mode === "LEGACY") {
         const serialized = (scope.snapshot as AggregateSnapshot).serialize();
         const payloadBytes = Buffer.byteLength(serialized, "utf8");
-        await connection.query(
+        await connection.execute(
           "UPDATE community_product_state SET payload=?,updated_at=UTC_TIMESTAMP(3) WHERE id=1",
           [serialized],
         );

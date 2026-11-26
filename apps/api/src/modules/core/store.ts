@@ -774,6 +774,12 @@ const emptyState = (): MemoryState => ({
   reconciliationReviews: new Map(),
 });
 const clone = <T>(value: T): T => structuredClone(value);
+
+function collectionState(value: MemoryState[keyof MemoryState]) {
+  if (value instanceof Map) return [...value.entries()];
+  if (value instanceof Set) return [...value];
+  return value;
+}
 const newest = <T extends { createdAt: string }>(values: T[]): T[] =>
   values.sort((a, b) => {
     const timestampOrder = b.createdAt.localeCompare(a.createdAt);
@@ -792,15 +798,13 @@ export class MemoryStore implements CommerceStore {
   public constructor(seed = false) {
     void seed;
   }
+  protected snapshotForRollback(): MemoryState | null {
+    return clone(this.data);
+  }
   protected exportState(): string {
     const output: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(this.data)) {
-      output[key] =
-        value instanceof Map
-          ? [...value.entries()]
-          : value instanceof Set
-            ? [...value]
-            : value;
+      output[key] = collectionState(value);
     }
     return JSON.stringify(output);
   }
@@ -945,8 +949,9 @@ export class MemoryStore implements CommerceStore {
   }
   /** Internal adapter hook: return a stable serialized view of one in-memory collection. */
   public exportEntityRows(collection: string): Array<[string, unknown]> {
-    const state = JSON.parse(this.exportState()) as Record<string, unknown>;
-    const value = state[collection];
+    if (!Object.hasOwn(this.data, collection)) return [];
+    const raw = collectionState(this.data[collection as keyof MemoryState]);
+    const value: unknown = JSON.parse(JSON.stringify(raw));
     if (collection === "audits") {
       return (Array.isArray(value) ? value as AuditLog[] : []).map((audit) => [JSON.stringify([audit.requestId, audit.action]), audit]);
     }
@@ -984,7 +989,7 @@ export class MemoryStore implements CommerceStore {
       release = resolve;
     });
     await before;
-    const snapshot = clone(this.data);
+    const snapshot = this.snapshotForRollback();
     try {
       const actor = getCurrentInternalWriteActor();
       if (actor) {
@@ -1032,8 +1037,10 @@ export class MemoryStore implements CommerceStore {
       }
       return await work(this);
     } catch (error) {
-      this.data = snapshot;
-      this.auditDedupeKeys = new Set(snapshot.audits.map((value) => JSON.stringify([value.requestId, value.action])));
+      if (snapshot) {
+        this.data = snapshot;
+        this.auditDedupeKeys = new Set(snapshot.audits.map((value) => JSON.stringify([value.requestId, value.action])));
+      }
       throw error;
     } finally {
       release();

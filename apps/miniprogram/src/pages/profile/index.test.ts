@@ -110,13 +110,15 @@ describe("profile page protected entry behavior", () => {
     storage.set("hometown-demo-customer-session", true);
     const { definition } = await loadPage();
     const { api } = await import("../../utils/api");
-    const refunded = {
+    const refunded: OrderDto = {
       id: "refunded-order", orderNo: "HT-45", status: "READY_FOR_PICKUP", totalCents: 4500,
+      campaignId: "campaign", serviceAreaId: "area", pickupPointId: "point", deliveryPlanId: "plan",
       deliveryPlan: null, items: [], createdAt: "2026-09-30T10:00:00.000Z",
+      expiresAt: "2026-09-30T10:10:00.000Z", paidAt: "2026-09-30T10:01:00.000Z", pickedUpAt: null,
       partialRefunds: [
         { id: "refund", exceptionId: "difference", status: "SUCCEEDED", amountCents: 1500 },
       ],
-    } as OrderDto;
+    };
     const earlierRefund = { ...refunded, id: "earlier-refund", orderNo: "HT-15", createdAt: "2026-09-29T10:00:00.000Z" };
     const ordinary = { ...refunded, id: "ordinary-order", partialRefunds: [] };
     vi.spyOn(api, "listOrders").mockResolvedValue([refunded, earlierRefund, ordinary]);

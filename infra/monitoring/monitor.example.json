@@ -1,5 +1,5 @@
 {
-  "healthUrl": "https://liziqi.icu/health/ready",
+  "healthUrl": "https://saas.liziqi.icu/health/ready",
   "backupDirectory": "/var/backups/hometown-database",
   "backupMaxAgeSeconds": 93600,
   "replicaMaxAgeSeconds": 93600,

@@ -125,7 +125,7 @@ describe('home remote-service recovery', () => {
   } as CampaignDto;
 
   it('shows a recoverable remote-service error instead of an empty table, then reloads on retry', async () => {
-    listCampaigns.mockRejectedValueOnce(new Error('HTTP 503 https://liziqi.icu/api/v1/campaigns'));
+    listCampaigns.mockRejectedValueOnce(new Error('HTTP 503 https://saas.liziqi.icu/api/v1/campaigns'));
     const page = await loadPage();
 
     await page.loadCampaigns.call(page);

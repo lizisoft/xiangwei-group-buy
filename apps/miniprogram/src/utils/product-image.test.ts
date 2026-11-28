@@ -3,7 +3,7 @@ import { resolveProductImageUrl } from './product-image';
 import { resetProductImageState } from './product-image-state';
 describe('public product image URLs', () => {
   it('resolves API paths against origin without duplicating API prefix', () => {
-    expect(resolveProductImageUrl('/api/v1/product-images/a.webp', 'https://liziqi.icu/api/v1')).toBe('https://liziqi.icu/api/v1/product-images/a.webp');
+    expect(resolveProductImageUrl('/api/v1/product-images/a.webp', 'https://saas.liziqi.icu/api/v1')).toBe('https://saas.liziqi.icu/api/v1/product-images/a.webp');
     expect(resolveProductImageUrl('/api/v1/product-images/a.webp', 'http://127.0.0.1:3101')).toBe('http://127.0.0.1:3101/api/v1/product-images/a.webp');
   });
   it('preserves legacy external images and rejects missing or unsafe sources', () => {

@@ -40,8 +40,8 @@ describe("consumer-safe request errors", () => {
   });
 
   it("uses a remote-service recovery message for the remote develop target", async () => {
-    const { customerErrorMessage } = await load({ apiBaseUrl: "https://liziqi.icu", authMode: "wechat", demoLoginEnabled: false });
-    expect(customerErrorMessage(new Error("HTTP 503 https://liziqi.icu/api/v1/campaigns"))).toBe(
+    const { customerErrorMessage } = await load({ apiBaseUrl: "https://saas.liziqi.icu", authMode: "wechat", demoLoginEnabled: false });
+    expect(customerErrorMessage(new Error("HTTP 503 https://saas.liziqi.icu/api/v1/campaigns"))).toBe(
       "暂时无法完成请求，请稍后重试",
     );
   });

@@ -41,7 +41,7 @@ describe("development demo auth guard", () => {
   it.each([
     ["HTTPS", "https://127.0.0.1:3100", true],
     ["unapproved HTTP", "http://unapproved.example.test", true],
-    ["production HTTPS even with demo capability", "https://liziqi.icu", true],
+    ["production HTTPS even with demo capability", "https://saas.liziqi.icu", true],
     ["demo capability disabled", "http://127.0.0.1:3100", false],
   ])("does not create a demo session for %s", async (_label, apiBaseUrl, enabled) => {
     const { customerAuth } = await loadApi({ apiBaseUrl, demoLoginEnabled: enabled });
@@ -66,7 +66,7 @@ describe("development demo auth guard", () => {
 
   it("rejects remote demo requests even with stored demo identity", async () => {
     storage.set("hometown-demo-customer-session", true);
-    const { api, customerAuth, request } = await loadApi({ apiBaseUrl: "https://liziqi.icu" });
+    const { api, customerAuth, request } = await loadApi({ apiBaseUrl: "https://saas.liziqi.icu" });
     expect(customerAuth.isLoggedIn()).toBe(false);
     await expect(api.listOrders()).rejects.toThrow("当前环境未启用开发登录");
     expect(request).not.toHaveBeenCalled();
@@ -99,7 +99,7 @@ describe("development demo auth guard", () => {
     await api.listOrders();
     expect(login).toHaveBeenCalledOnce();
     expect(request.mock.calls[0]?.[0]).toMatchObject({
-      url: "https://liziqi.icu/api/v1/auth/wechat/login",
+      url: "https://saas.liziqi.icu/api/v1/auth/wechat/login",
       data: { code: "test-wechat-code", privacyAccepted: true, privacyVersion: PRIVACY_NOTICE_VERSION },
     });
     expect(request.mock.calls[1]?.[0].header.authorization).toBe("Bearer test-wechat-token");

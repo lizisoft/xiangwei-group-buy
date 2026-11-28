@@ -14,7 +14,7 @@ describe('secure mini-program deployment configuration', () => {
     expect(validSubscriptionMap([...fiveTemplates, fiveTemplates[0]!])).toBe(false);
   });
   it('defaults to the migrated HTTPS target with WeChat auth and preserves explicit local demo', () => {
-    expect(resolveDeployment('develop')).toMatchObject({ apiBaseUrl: 'https://liziqi.icu', authMode: 'wechat', demoLoginEnabled: false });
+    expect(resolveDeployment('develop')).toMatchObject({ apiBaseUrl: 'https://saas.liziqi.icu', authMode: 'wechat', demoLoginEnabled: false });
     expect(resolveDeployment('local')).toMatchObject({ authMode: 'demo', demoLoginEnabled: true });
   });
 
@@ -34,7 +34,7 @@ describe('secure mini-program deployment configuration', () => {
     expect(isLocalDemoDeployment({ ...local, authMode: 'wechat' })).toBe(false);
     expect(isLocalDemoDeployment({ ...local, demoLoginEnabled: false })).toBe(false);
     expect(isDemoDeployment({ ...local, apiBaseUrl: 'http://unapproved.example.test' })).toBe(false);
-    expect(isDemoDeployment({ ...remote, apiBaseUrl: 'https://liziqi.icu' })).toBe(false);
+    expect(isDemoDeployment({ ...remote, apiBaseUrl: 'https://saas.liziqi.icu' })).toBe(false);
     expect(isDemoDeployment({ ...remote, apiBaseUrl: 'http://remote.example.test:9999' })).toBe(false);
   });
 

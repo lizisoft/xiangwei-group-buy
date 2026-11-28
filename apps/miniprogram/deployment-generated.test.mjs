@@ -21,7 +21,7 @@ function loadGeneratedDeployment(generated) {
 
 describe('generated environment configuration', () => {
   it('reuses approved same-target remote templates in DevTools while local stays isolated', () => {
-    const valid = { apiBaseUrl: 'https://liziqi.icu', authMode: 'wechat', subscriptionTemplates: fiveTemplates };
+    const valid = { apiBaseUrl: 'https://saas.liziqi.icu', authMode: 'wechat', subscriptionTemplates: fiveTemplates };
     const config = loadGeneratedDeployment({ deployments: { trial: valid, release: valid } });
     expect(config.resolveDeployment('develop').subscriptionTemplates).toEqual(fiveTemplates);
     expect(config.resolveDeployment('local').subscriptionTemplates).toEqual([]);
@@ -36,20 +36,30 @@ describe('generated environment configuration', () => {
       apiBaseUrl: 'http://127.0.0.1:3100', authMode: 'demo', demoLoginEnabled: true,
     });
     expect(loadGeneratedDeployment({ development: { mode: 'remote' } }).resolveDeployment('develop')).toMatchObject({
-      apiBaseUrl: 'https://liziqi.icu', authMode: 'wechat', demoLoginEnabled: false,
+      apiBaseUrl: 'https://saas.liziqi.icu', authMode: 'wechat', demoLoginEnabled: false,
     });
     expect(() => loadGeneratedDeployment({ development: { mode: 'invalid' } }).resolveDeployment('develop')).toThrow(/配置无效/);
   });
 
+  it('keeps release on the dedicated production origin while allowing a distinct HTTPS trial origin', () => {
+    const trial = { apiBaseUrl: 'https://trial.owned.test', authMode: 'wechat', subscriptionTemplates: fiveTemplates };
+    const config = loadGeneratedDeployment({ deployments: { trial, release: trial } });
+    expect(config.resolveDeployment('trial').apiBaseUrl).toBe(trial.apiBaseUrl);
+    expect(() => config.resolveDeployment('release')).toThrow(/deployment\.local/);
+    expect(config.resolveDeployment('develop').subscriptionTemplates).toEqual([]);
+  });
+
   it.each(['trial', 'release'])('keeps %s on WeChat auth and rejects unsafe or incomplete configuration', (environment) => {
-    const valid = { apiBaseUrl: 'https://liziqi.icu', authMode: 'wechat', subscriptionTemplates: fiveTemplates, demoLoginEnabled: true };
+    const valid = { apiBaseUrl: 'https://saas.liziqi.icu', authMode: 'wechat', subscriptionTemplates: fiveTemplates, demoLoginEnabled: true };
     const resolve = (deployment) => loadGeneratedDeployment({ deployments: { [environment]: deployment } }).resolveDeployment(environment);
-    expect(resolve(valid)).toMatchObject({ apiBaseUrl: 'https://liziqi.icu', authMode: 'wechat', demoLoginEnabled: false });
+    expect(resolve(valid)).toMatchObject({ apiBaseUrl: 'https://saas.liziqi.icu', authMode: 'wechat', demoLoginEnabled: false });
     for (const invalid of [
       undefined,
       { ...valid, authMode: 'demo' },
       { ...valid, apiBaseUrl: 'http://remote.example.test' },
       { ...valid, apiBaseUrl: 'https://api.example.com' },
+      { ...valid, apiBaseUrl: 'https://liziqi.icu' },
+      { ...valid, apiBaseUrl: 'https://admin.liziqi.icu' },
       { ...valid, subscriptionTemplates: fiveTemplates.slice(1) },
       { ...valid, subscriptionTemplates: fiveTemplates.map((item) => ({ ...item, templateId: 'approved-trial-placeholder' })) },
     ]) expect(() => resolve(invalid)).toThrow(/deployment\.local/);

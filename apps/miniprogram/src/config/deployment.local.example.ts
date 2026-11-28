@@ -19,7 +19,7 @@ export const deployments: Partial<Record<'trial' | 'release', MiniProgramDeploym
     ],
   },
   release: {
-    apiBaseUrl: 'https://api.example.com',
+    apiBaseUrl: 'https://saas.liziqi.icu',
     authMode: 'wechat',
     subscriptionTemplates: [
       { type: 'SITE_CONFIRMED', templateId: 'approved-release-site-template-id' },
@@ -34,8 +34,8 @@ export const deployments: Partial<Record<'trial' | 'release', MiniProgramDeploym
 };
 
 /**
- * Optional local development override. The default `develop` target is the
- * HTTPS API with WeChat login; change remote to local only when the API
+ * Optional local development override. The default `develop` target is
+ * https://saas.liziqi.icu with WeChat login; change remote to local only when the API
  * is running on this machine. Never use this override for trial/release.
  */
 export const development = { mode: 'remote' as const };

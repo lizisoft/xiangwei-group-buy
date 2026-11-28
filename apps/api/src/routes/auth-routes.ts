@@ -23,21 +23,11 @@ const adminPasswordChangeRateLimit =
     ? { max: 50, timeWindow: "15 minutes" }
     : { max: 5, timeWindow: "15 minutes" };
 
-export function registerAuthRoutes(
+export function registerConsumerWechatLoginRoute(
   app: FastifyInstance,
-  dependencies: {
-    authService: AuthService | null;
-    adminAuthService: AdminAuthService;
-    privacyNoticeVersion: string;
-    webSessions: WebSessions;
-    loginProtection: LoginProtection;
-  },
+  authService: AuthService | null,
+  privacyNoticeVersion: string,
 ): void {
-  const {
-    authService,
-    adminAuthService,
-    privacyNoticeVersion, webSessions, loginProtection,
-  } = dependencies;
   app.post(
     "/api/v1/auth/wechat/login",
     { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } },
@@ -57,6 +47,24 @@ export function registerAuthRoutes(
       };
     },
   );
+}
+
+export function registerAuthRoutes(
+  app: FastifyInstance,
+  dependencies: {
+    authService: AuthService | null;
+    adminAuthService: AdminAuthService;
+    privacyNoticeVersion: string;
+    webSessions: WebSessions;
+    loginProtection: LoginProtection;
+  },
+): void {
+  const {
+    authService,
+    adminAuthService,
+    privacyNoticeVersion, webSessions, loginProtection,
+  } = dependencies;
+  registerConsumerWechatLoginRoute(app, authService, privacyNoticeVersion);
   const challengeInput = z.object({ purpose: z.enum(["login", "reauth", "password"]), username: z.string().trim().max(64).default("") });
   const proofSchema = z.object({ challenge: z.string().max(1024), nonce: z.string().regex(/^\d{1,12}$/) });
   const context = (request: FastifyRequest, binding: WebBinding, purpose: "login" | "reauth" | "password", username = "") => ({

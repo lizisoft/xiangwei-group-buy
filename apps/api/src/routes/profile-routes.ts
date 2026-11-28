@@ -7,7 +7,7 @@ import type { CommerceStore } from "../modules/core/store.js";
 import type { ProductImages } from "../modules/media/product-images.js";
 import type { User } from "../modules/core/types.js";
 
-function publicProfile(user: User) {
+export function publicProfile(user: User) {
   return {
     id: user.id,
     displayName: user.displayName ?? "微信用户",

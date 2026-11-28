@@ -11,6 +11,7 @@ export function registerPublicCatalogRoutes(app: FastifyInstance, dependencies: 
   listServiceAreas(): Promise<ServiceArea[]>;
   listProductCategories(): Promise<ProductCategory[]>;
   listPickupPoints(serviceAreaId?: string): Promise<PickupPoint[]>;
+  publicPickupPoint?(point: PickupPoint): unknown;
   getDeliveryPlanByCampaign(campaignId: string): Promise<DeliveryPlan | null>;
   getSalesSnapshot(): Promise<NetSalesSnapshot>;
   withCampaignItems(campaign: Campaign, sales: NetSalesSnapshot): Promise<unknown>;
@@ -46,7 +47,8 @@ export function registerPublicCatalogRoutes(app: FastifyInstance, dependencies: 
   }));
   app.get('/api/v1/pickup-points', async (request) => {
     const query = request.query as { serviceAreaId?: string };
-    return { data: (await dependencies.listPickupPoints(query.serviceAreaId)).filter((item) => item.status === 'ACTIVE') };
+    const points = (await dependencies.listPickupPoints(query.serviceAreaId)).filter((item) => item.status === 'ACTIVE');
+    return { data: dependencies.publicPickupPoint ? points.map(dependencies.publicPickupPoint) : points };
   });
   app.get('/api/v1/campaigns/:id', async (request) => dependencies.readSnapshot(async () => {
     const id = identifierSchema.parse((request.params as { id: string }).id);

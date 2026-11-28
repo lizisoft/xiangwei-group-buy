@@ -30,8 +30,7 @@ async function validateTarget(store: CommerceStore, input: { scope: string; serv
   }
 }
 
-export function registerMerchandisingRoutes(app: FastifyInstance, dependencies: { store: CommerceStore; images: ProductImages }): void {
-  const { store, images } = dependencies;
+export function registerPublicHomepageBannerRoute(app: FastifyInstance, store: CommerceStore): void {
   app.get("/api/v1/homepage-banners", async (request) => {
     const query = request.query as { serviceAreaId?: string };
     const serviceAreaId = query.serviceAreaId ? identifierSchema.parse(query.serviceAreaId) : null;
@@ -61,6 +60,11 @@ export function registerMerchandisingRoutes(app: FastifyInstance, dependencies: 
     const data = resolved.filter((value) => value !== null);
     return { data };
   });
+}
+
+export function registerMerchandisingRoutes(app: FastifyInstance, dependencies: { store: CommerceStore; images: ProductImages }): void {
+  const { store, images } = dependencies;
+  registerPublicHomepageBannerRoute(app, store);
   app.get("/api/v1/admin/homepage-banners", async (request) => {
     requireActor(request, ["OPERATOR", "SUPER_ADMIN"]);
     return { data: await store.listHomepageBanners(true) };

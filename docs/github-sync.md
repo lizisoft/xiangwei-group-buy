@@ -1,6 +1,6 @@
 # GitHub 同步约定
 
-用户于 2026-10-08 要求更新 GitHub 并持续保持最新。2026-10-09 用户明确要求将仓库改为公开，替代原私有性约定。目标为公开仓库 `lizi-product-studio/xiangwei-group-buy` 的 `main` 分支。
+用户于 2026-10-08 要求更新 GitHub 并持续保持最新。2026-10-09 用户明确要求将仓库改为公开，替代原私有性约定。当前目标为公开仓库 `lizisoft/xiangwei-group-buy` 的 `main` 分支。旧地址 `lizi-product-studio/xiangwei-group-buy` 指向同一 GitHub 仓库（ID 1333792679）。
 
 ## 本次来源
 

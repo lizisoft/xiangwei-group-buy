@@ -4,7 +4,7 @@
 
 ## 开始迭代
 
-先读 [仓库导航与清理说明](docs/repository-guide.md)，查看各目录用途、文档权威、构建产物和分支状态。业务规则以 [产品需求](docs/PRD.md)、[架构说明](docs/architecture.md) 和 [上线清单](docs/go-live-checklist.md) 为入口；历史任务记录用于追溯，不能替代当前发布验证。
+项目分工与验收职责见[协作规则](AGENTS.md)，接手迭代和常用手册见[仓库导航](docs/repository-guide.md)。业务规则以 [产品需求](docs/PRD.md)、[架构说明](docs/architecture.md) 和 [上线清单](docs/go-live-checklist.md) 为入口；历史任务记录用于追溯，不能替代当前发布验证。
 
 本仓库的运营后台、API 和小程序共用一个工作区；原型属于设计参考，不能当作已接通业务的产品页面。GitHub 分支、服务器版本与微信已发布版本分别核对，不能因为代码已上传就认定全部上线。
 
@@ -76,7 +76,7 @@ pnpm test:e2e
 
 - 生产必须使用 MySQL、Redis、HTTPS、真实微信登录和真实微信支付，启动配置缺失时服务拒绝启动。
 - 周期调和在单实例防重入，并用 Redis 租约避免多个 API 副本重复执行；调和失败会使当前副本 readiness 降级。当前 readiness 只记录本副本最近一次执行结果，不足以证明非持锁副本的全局调和健康，多副本发布前必须补全共享健康信号或拆出独立 worker。
-- 当前 MySQL 单行聚合只适合有容量门槛的受控试点。上线前必须取得真实 MySQL/Redis 压测和恢复证据，未达标不得扩区。
+- MySQL 支持聚合与实体存储，业务写事务仍共享写锁。上线或扩区前，按实际存储模式核对真实 MySQL/Redis 压测与恢复证据。见[数据基线](docs/architecture.md#数据基线)。
 - 服务不会自动创建全国区域或默认自提点；消费者只会看到已有真实启用点位的可下单区域。迁移不写入具体城市名单、点位或演示订单。
 - 内部角色仅为 `SUPER_ADMIN`、`OPERATOR`、`CUSTOMER_SERVICE`、`FINANCE`、`PICKUP_MANAGER`；消费者使用 `USER`。
 - 微信私钥、公钥和 API v3 密钥不得提交到代码库。

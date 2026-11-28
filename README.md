@@ -48,7 +48,7 @@ pnpm dev:api
 pnpm dev:admin
 ```
 
-在微信开发者工具中导入项目下的 `apps/miniprogram`。切换仓库分支会同时替换开发者工具正在读取的源码。开发者工具的 `develop` 环境默认访问 `https://liziqi.icu` 并使用真实微信登录。
+在微信开发者工具中导入项目下的 `apps/miniprogram`。切换仓库分支会同时替换开发者工具正在读取的源码。当前源码的 `develop` 默认地址仍为 `https://liziqi.icu`。该域名现承载校服服务。乡味集日常联调使用下述本地模式，远程微信联调待独立入口就绪。
 
 如需本地联调，可将 `apps/miniprogram/src/config/deployment.local.example.ts` 复制为被 gitignore 的 `apps/miniprogram/src/config/deployment.local.ts`，并显式设置 `development = { mode: 'local' }`（示例默认 `remote`；已有本地配置时仅修改该字段，保留已有模板），再在项目根目录运行 `pnpm dev`。该切换只对 `develop/local` 的开发体验登录生效；`trial/release` 仍必须使用备案 HTTPS 域名、真实微信登录和已审核模板配置，不能填 HTTP 地址或固定凭据。
 
